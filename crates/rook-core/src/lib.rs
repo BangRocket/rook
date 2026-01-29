@@ -21,6 +21,7 @@
 pub mod cognitive;
 pub mod config;
 pub mod error;
+pub mod ingestion;
 pub mod memory;
 pub mod traits;
 pub mod types;
@@ -29,6 +30,7 @@ pub mod types;
 pub use cognitive::{ArchivalCandidate, CognitiveStore, FsrsScheduler};
 pub use config::MemoryConfig;
 pub use error::{RookError, RookResult};
+pub use ingestion::{StrengthSignal, StrengthSignalProcessor};
 pub use memory::Memory;
 pub use traits::{
     Embedder, EmbedderConfig, EmbeddingAction, Llm, LlmConfig, Reranker, VectorStore,
