@@ -44,9 +44,17 @@ strum = { workspace = true }
 # Spaced repetition
 fsrs = { workspace = true }
 
+# Full-text search
+tantivy = { workspace = true }
+
+# Graph operations
+petgraph = { workspace = true }
+ordered-float = { workspace = true }
+
 # Scheduling
 tokio-cron-scheduler = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
 mockall = { workspace = true }
+tempfile = { workspace = true }

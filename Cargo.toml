@@ -45,8 +45,15 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 sqlite-vec = "0.1"
 zerocopy = { version = "0.8", features = ["derive"] }
 
+# Graph operations
+petgraph = { version = "0.6", features = ["serde-1"] }
+ordered-float = "4"
+
 # Spaced repetition
 fsrs = "5.2"
+
+# Full-text search
+tantivy = "0.25"
 
 # Error handling
 thiserror = "1.0"
@@ -76,6 +83,7 @@ strum = { version = "0.27", features = ["derive"] }
 # Testing
 tokio-test = "0.4"
 mockall = "0.12"
+tempfile = "3"
 
 # Scheduling
 tokio-cron-scheduler = "0.14"

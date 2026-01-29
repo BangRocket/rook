@@ -24,6 +24,7 @@ pub mod consolidation;
 pub mod error;
 pub mod ingestion;
 pub mod memory;
+pub mod retrieval;
 pub mod traits;
 pub mod types;
 
@@ -44,6 +45,10 @@ pub use memory::Memory;
 pub use traits::{
     Embedder, EmbedderConfig, EmbeddingAction, Llm, LlmConfig, Reranker, VectorStore,
     VectorStoreConfig,
+};
+pub use retrieval::{
+    spread_activation, spread_activation_by_id, ActivatedMemory, ActivationEdge, ActivationNode,
+    SpreadingConfig,
 };
 pub use types::{
     AddResult, ArchivalConfig, DualStrength, Filter, FsrsState, Grade, MemoryEvent, MemoryItem,
