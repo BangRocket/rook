@@ -23,9 +23,11 @@
 mod behavioral_tag;
 pub mod manager;
 mod phases;
+pub mod scheduler;
 mod synaptic_tag;
 
 pub use behavioral_tag::{BehavioralTagConfig, BehavioralTagger, NoveltyResult};
 pub use manager::{ConsolidationConfig, ConsolidationManager, ConsolidationResult};
 pub use phases::ConsolidationPhase;
+pub use scheduler::{ConsolidationScheduler, SchedulerConfig};
 pub use synaptic_tag::SynapticTag;

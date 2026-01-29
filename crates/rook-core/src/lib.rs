@@ -31,7 +31,9 @@ pub mod types;
 pub use cognitive::{ArchivalCandidate, CognitiveStore, FsrsScheduler};
 pub use config::MemoryConfig;
 pub use consolidation::{
-    BehavioralTagConfig, BehavioralTagger, ConsolidationPhase, NoveltyResult, SynapticTag,
+    BehavioralTagConfig, BehavioralTagger, ConsolidationConfig, ConsolidationManager,
+    ConsolidationPhase, ConsolidationResult, ConsolidationScheduler, NoveltyResult, SchedulerConfig,
+    SynapticTag,
 };
 pub use error::{RookError, RookResult};
 pub use ingestion::{
