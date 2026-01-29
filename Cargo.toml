@@ -45,6 +45,9 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 sqlite-vec = "0.1"
 zerocopy = { version = "0.8", features = ["derive"] }
 
+# Spaced repetition
+fsrs = "5.2"
+
 # Error handling
 thiserror = "1.0"
 anyhow = "1.0"

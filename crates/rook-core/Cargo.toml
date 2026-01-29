@@ -39,6 +39,9 @@ chrono = { workspace = true }
 regex = { workspace = true }
 md5 = { workspace = true }
 
+# Spaced repetition
+fsrs = { workspace = true }
+
 [dev-dependencies]
 tokio-test = { workspace = true }
 mockall = { workspace = true }
