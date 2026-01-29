@@ -22,8 +22,9 @@ use crate::types::{
 use super::history::{HistoryEvent, HistoryStore};
 use super::json_parser::{parse_facts, parse_memory_actions};
 use super::prompts::{
-    agent_memory_extraction_prompt, build_update_memory_message, procedural_memory_prompt,
-    user_memory_extraction_prompt,
+    agent_memory_extraction_prompt, build_update_memory_message, classification_prompt,
+    parse_classification, procedural_memory_prompt, user_memory_extraction_prompt,
+    ClassificationResult,
 };
 use super::session::SessionScope;
 use super::telemetry::{process_telemetry_filters, Telemetry};
@@ -135,6 +136,10 @@ impl Memory {
     }
 
     /// Search for memories.
+    ///
+    /// If `key_memory.include_in_search` is enabled in config, key memories
+    /// (is_key=true) are always included at the top of results, before
+    /// similarity-ranked results. Duplicate key memories are deduplicated.
     pub async fn search(
         &self,
         query: &str,
@@ -146,7 +151,7 @@ impl Memory {
         threshold: Option<f32>,
         rerank: bool,
     ) -> RookResult<SearchResult> {
-        let scope = SessionScope::new(user_id, agent_id, run_id);
+        let scope = SessionScope::new(user_id.clone(), agent_id.clone(), run_id.clone());
         scope.validate()?;
 
         let mut effective_filters = scope.to_filters();
@@ -154,7 +159,7 @@ impl Memory {
             effective_filters.extend(additional);
         }
 
-        // Search vector store
+        // Search vector store for similarity-ranked results
         let mut memories = self
             .search_vector_store(query, &effective_filters, limit, threshold)
             .await?;
@@ -163,6 +168,17 @@ impl Memory {
         if rerank {
             if let Some(ref reranker) = self.reranker {
                 memories = reranker.rerank(query, memories, Some(limit)).await?;
+            }
+        }
+
+        // Inject key memories at top if enabled
+        if self.config.key_memory.include_in_search {
+            let key_memories = self
+                .get_key_memories(user_id, agent_id, run_id)
+                .await?;
+
+            if !key_memories.is_empty() {
+                memories = Self::merge_with_key_memories(key_memories, memories);
             }
         }
 
@@ -594,6 +610,30 @@ impl Memory {
         let mut merged = key_memories;
         merged.extend(deduplicated_results);
         merged
+    }
+
+    /// Classify a memory using LLM.
+    ///
+    /// Uses the category configuration to generate a prompt with valid categories,
+    /// calls the LLM to classify the memory, and returns a ClassificationResult
+    /// with the category, is_key flag, and confidence score.
+    ///
+    /// If the LLM returns an invalid category, it falls back to "misc".
+    async fn classify_memory(&self, content: &str) -> RookResult<ClassificationResult> {
+        let valid_categories: Vec<String> = self
+            .config
+            .category
+            .valid_categories()
+            .into_iter()
+            .collect();
+
+        let prompt = classification_prompt(&valid_categories);
+        let messages = vec![Message::system(prompt), Message::user(content)];
+
+        let response = self.llm.generate(&messages, None).await?;
+        let result = parse_classification(response.content_or_empty(), &valid_categories);
+
+        Ok(result)
     }
 
     // Private helper methods
