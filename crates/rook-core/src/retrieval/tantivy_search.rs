@@ -7,10 +7,8 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tantivy::collector::TopDocs;
-use tantivy::query::QueryParser;
 use tantivy::schema::{Field, Schema, STORED, STRING, TEXT};
-use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
+use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term};
 
 use crate::error::{RookError, RookResult};
 
@@ -125,5 +123,90 @@ impl TantivySearcher {
             content_field,
             metadata_field,
         })
+    }
+
+    /// Index a memory document.
+    ///
+    /// # Arguments
+    /// * `id` - Unique memory ID
+    /// * `content` - Text content to index
+    /// * `metadata` - Optional JSON metadata string
+    ///
+    /// # Note
+    /// Call `commit()` after adding documents to make them searchable.
+    pub fn add(&self, id: &str, content: &str, metadata: Option<&str>) -> RookResult<()> {
+        let writer = self
+            .writer
+            .lock()
+            .map_err(|_| RookError::Configuration("Failed to acquire writer lock".to_string()))?;
+
+        let mut doc = TantivyDocument::default();
+        doc.add_text(self.id_field, id);
+        doc.add_text(self.content_field, content);
+        if let Some(meta) = metadata {
+            doc.add_text(self.metadata_field, meta);
+        }
+
+        writer
+            .add_document(doc)
+            .map_err(|e| RookError::Configuration(format!("Failed to add document: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Update a memory document (delete + add).
+    ///
+    /// # Arguments
+    /// * `id` - Memory ID to update
+    /// * `content` - New text content
+    /// * `metadata` - Optional new JSON metadata
+    pub fn update(&self, id: &str, content: &str, metadata: Option<&str>) -> RookResult<()> {
+        self.delete(id)?;
+        self.add(id, content, metadata)
+    }
+
+    /// Delete a memory document by ID.
+    ///
+    /// # Note
+    /// Call `commit()` after deleting to persist changes.
+    pub fn delete(&self, id: &str) -> RookResult<()> {
+        let writer = self
+            .writer
+            .lock()
+            .map_err(|_| RookError::Configuration("Failed to acquire writer lock".to_string()))?;
+
+        // Create term for exact ID match
+        let id_term = Term::from_field_text(self.id_field, id);
+        writer.delete_term(id_term);
+
+        Ok(())
+    }
+
+    /// Commit pending changes to make them searchable.
+    ///
+    /// # Important
+    /// Documents are not searchable until commit() is called.
+    /// Batch multiple add/delete operations before committing for efficiency.
+    pub fn commit(&self) -> RookResult<()> {
+        let mut writer = self
+            .writer
+            .lock()
+            .map_err(|_| RookError::Configuration("Failed to acquire writer lock".to_string()))?;
+
+        writer
+            .commit()
+            .map_err(|e| RookError::Configuration(format!("Failed to commit: {}", e)))?;
+
+        // Reload reader to see committed changes
+        self.reader
+            .reload()
+            .map_err(|e| RookError::Configuration(format!("Failed to reload reader: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get the number of indexed documents.
+    pub fn num_docs(&self) -> u64 {
+        self.reader.searcher().num_docs()
     }
 }
