@@ -279,16 +279,23 @@ impl Memory {
             memory: data.to_string(),
             hash: Some(format!("{:x}", md5::compute(data.as_bytes()))),
             score: None,
-            metadata: Some(payload),
+            metadata: Some(payload.clone()),
             created_at: existing
                 .payload
                 .get("created_at")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
             updated_at: Some(updated_at),
+            category: payload
+                .get("category")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            is_key: payload
+                .get("is_key")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             memory_state: None,
             dual_strength: None,
-            is_key: false,
         })
     }
 
@@ -1036,9 +1043,18 @@ impl Memory {
                 .get("updated_at")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
+            category: record
+                .payload
+                .get("category")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            is_key: record
+                .payload
+                .get("is_key")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             memory_state: None,
             dual_strength: None,
-            is_key: false,
         }
     }
 
@@ -1068,9 +1084,18 @@ impl Memory {
                 .get("updated_at")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
+            category: result
+                .payload
+                .get("category")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            is_key: result
+                .payload
+                .get("is_key")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             memory_state: None,
             dual_strength: None,
-            is_key: false,
         }
     }
 }

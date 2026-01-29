@@ -27,6 +27,15 @@ pub struct MemoryItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
 
+    // Classification fields
+
+    /// The category assigned to this memory (e.g., "professional", "personal_details").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// Whether this is a key/important memory (higher priority in retrieval).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_key: bool,
+
     // FSRS-6 memory dynamics fields
 
     /// FSRS memory state (stability, difficulty, reps, lapses).
@@ -35,9 +44,6 @@ pub struct MemoryItem {
     /// Dual-strength model (storage and retrieval strength).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dual_strength: Option<DualStrength>,
-    /// Whether this is a key/important memory (higher priority in retrieval).
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub is_key: bool,
 }
 
 /// Helper function to skip serializing false booleans.
@@ -56,9 +62,10 @@ impl MemoryItem {
             metadata: None,
             created_at: None,
             updated_at: None,
+            category: None,
+            is_key: false,
             memory_state: None,
             dual_strength: None,
-            is_key: false,
         }
     }
 
@@ -89,6 +96,12 @@ impl MemoryItem {
     /// Set the dual-strength model state.
     pub fn with_dual_strength(mut self, strength: DualStrength) -> Self {
         self.dual_strength = Some(strength);
+        self
+    }
+
+    /// Set the category for this memory.
+    pub fn with_category(mut self, category: impl Into<String>) -> Self {
+        self.category = Some(category.into());
         self
     }
 
@@ -260,6 +273,7 @@ mod tests {
             .with_updated_at("2024-01-02T00:00:00Z")
             .with_memory_state(FsrsState::new())
             .with_dual_strength(DualStrength::new())
+            .with_category("professional")
             .with_is_key(true);
 
         assert_eq!(item.id, "id1");
@@ -270,6 +284,43 @@ mod tests {
         assert_eq!(item.updated_at, Some("2024-01-02T00:00:00Z".to_string()));
         assert!(item.memory_state.is_some());
         assert!(item.dual_strength.is_some());
+        assert_eq!(item.category, Some("professional".to_string()));
         assert!(item.is_key);
+    }
+
+    #[test]
+    fn test_memory_item_with_category() {
+        let item = MemoryItem::new("id1", "I work as an engineer")
+            .with_category("professional");
+
+        assert_eq!(item.category, Some("professional".to_string()));
+    }
+
+    #[test]
+    fn test_memory_item_category_serialization() {
+        let item = MemoryItem::new("id1", "test memory")
+            .with_category("health")
+            .with_is_key(true);
+
+        let json = serde_json::to_string(&item).unwrap();
+
+        // Verify JSON contains category
+        assert!(json.contains("\"category\":\"health\""));
+        assert!(json.contains("\"is_key\":true"));
+
+        // Verify roundtrip
+        let deserialized: MemoryItem = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.category, Some("health".to_string()));
+        assert!(deserialized.is_key);
+    }
+
+    #[test]
+    fn test_memory_item_category_omitted_when_none() {
+        let item = MemoryItem::new("id1", "test memory");
+
+        let json = serde_json::to_string(&item).unwrap();
+
+        // category should be omitted when None
+        assert!(!json.contains("category"));
     }
 }
