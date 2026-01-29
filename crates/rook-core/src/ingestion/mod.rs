@@ -11,9 +11,11 @@
 //! user actions and system events.
 
 pub mod layers;
+pub mod prediction_error;
 pub mod strength_signals;
 pub mod types;
 
 pub use layers::*;
+pub use prediction_error::{GateResult, PredictionErrorGate};
 pub use strength_signals::{StrengthSignal, StrengthSignalProcessor};
 pub use types::*;
