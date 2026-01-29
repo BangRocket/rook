@@ -3,8 +3,77 @@
 //! Implements cognitive memory dynamics following the FSRS-6 algorithm
 //! with dual-strength model based on Bjork's theory.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+
+/// Configuration for memory archival.
+///
+/// Defines thresholds for identifying memories that should be archived
+/// (moved to cold storage) due to low retrievability and age.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArchivalConfig {
+    /// Retrievability threshold below which memories become archival candidates.
+    /// Default: 0.1 (10% recall probability)
+    pub archive_threshold: f32,
+
+    /// Minimum age in days before a memory can be considered for archival.
+    /// Prevents archiving recently created memories.
+    /// Default: 30 days
+    pub min_age_days: u32,
+
+    /// Maximum number of memories to archive in a single operation.
+    /// Default: 100
+    pub archive_limit: usize,
+}
+
+impl ArchivalConfig {
+    /// Create a new archival config with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create archival config with custom threshold.
+    pub fn with_threshold(threshold: f32) -> Self {
+        Self {
+            archive_threshold: threshold,
+            ..Default::default()
+        }
+    }
+
+    /// Check if a memory is an archival candidate based on this config.
+    ///
+    /// A memory is an archival candidate if:
+    /// 1. Its retrievability is below the archive threshold
+    /// 2. It's older than min_age_days
+    /// 3. It's not marked as a key memory (is_key check done externally)
+    ///
+    /// # Arguments
+    /// * `retrievability` - Current retrievability of the memory
+    /// * `created_at` - When the memory was created
+    /// * `now` - Current timestamp
+    pub fn is_candidate(&self, retrievability: f32, created_at: DateTime<Utc>, now: DateTime<Utc>) -> bool {
+        // Check retrievability threshold
+        if retrievability >= self.archive_threshold {
+            return false;
+        }
+
+        // Check minimum age
+        let age = now.signed_duration_since(created_at);
+        let min_age = Duration::days(self.min_age_days as i64);
+
+        age >= min_age
+    }
+}
+
+impl Default for ArchivalConfig {
+    fn default() -> Self {
+        Self {
+            archive_threshold: 0.1,
+            min_age_days: 30,
+            archive_limit: 100,
+        }
+    }
+}
 
 /// FSRS-6 memory state tracking cognitive dynamics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -274,5 +343,81 @@ mod tests {
         assert_eq!(Grade::from_rating(4), Some(Grade::Easy));
         assert_eq!(Grade::from_rating(0), None);
         assert_eq!(Grade::from_rating(5), None);
+    }
+
+    // ============================================================
+    // ArchivalConfig tests
+    // ============================================================
+
+    #[test]
+    fn test_archival_config_default() {
+        let config = ArchivalConfig::default();
+        assert_eq!(config.archive_threshold, 0.1);
+        assert_eq!(config.min_age_days, 30);
+        assert_eq!(config.archive_limit, 100);
+    }
+
+    #[test]
+    fn test_archival_config_with_threshold() {
+        let config = ArchivalConfig::with_threshold(0.05);
+        assert_eq!(config.archive_threshold, 0.05);
+        assert_eq!(config.min_age_days, 30); // Unchanged default
+    }
+
+    #[test]
+    fn test_archival_candidate_low_retrievability_old_memory() {
+        let config = ArchivalConfig::default();
+        let now = Utc::now();
+        let created_at = now - Duration::days(60); // 60 days old
+
+        // Low retrievability (5%), old memory -> candidate
+        assert!(config.is_candidate(0.05, created_at, now));
+    }
+
+    #[test]
+    fn test_archival_candidate_high_retrievability() {
+        let config = ArchivalConfig::default();
+        let now = Utc::now();
+        let created_at = now - Duration::days(60);
+
+        // High retrievability (50%), even if old -> not candidate
+        assert!(!config.is_candidate(0.5, created_at, now));
+    }
+
+    #[test]
+    fn test_archival_candidate_too_young() {
+        let config = ArchivalConfig::default();
+        let now = Utc::now();
+        let created_at = now - Duration::days(10); // Only 10 days old
+
+        // Low retrievability but too young -> not candidate
+        assert!(!config.is_candidate(0.05, created_at, now));
+    }
+
+    #[test]
+    fn test_archival_candidate_at_threshold_boundary() {
+        let config = ArchivalConfig::default(); // threshold = 0.1
+        let now = Utc::now();
+        let created_at = now - Duration::days(60);
+
+        // Exactly at threshold -> not candidate (must be below)
+        assert!(!config.is_candidate(0.1, created_at, now));
+
+        // Just below threshold -> candidate
+        assert!(config.is_candidate(0.099, created_at, now));
+    }
+
+    #[test]
+    fn test_archival_candidate_at_age_boundary() {
+        let config = ArchivalConfig::default(); // min_age_days = 30
+        let now = Utc::now();
+
+        // Exactly 30 days old -> candidate
+        let created_at_30 = now - Duration::days(30);
+        assert!(config.is_candidate(0.05, created_at_30, now));
+
+        // 29 days old -> not candidate
+        let created_at_29 = now - Duration::days(29);
+        assert!(!config.is_candidate(0.05, created_at_29, now));
     }
 }

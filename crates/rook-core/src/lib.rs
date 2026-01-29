@@ -35,6 +35,6 @@ pub use traits::{
     VectorStoreConfig,
 };
 pub use types::{
-    AddResult, DualStrength, Filter, FsrsState, Grade, MemoryEvent, MemoryItem, MemoryResult,
-    MemoryType, Message, MessageInput, MessageRole, SearchResult,
+    AddResult, ArchivalConfig, DualStrength, Filter, FsrsState, Grade, MemoryEvent, MemoryItem,
+    MemoryResult, MemoryType, Message, MessageInput, MessageRole, SearchResult,
 };

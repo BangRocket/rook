@@ -3,7 +3,7 @@
 //! Provides retrievability calculation and initial state assignment
 //! based on the Free Spaced Repetition Scheduler (FSRS) algorithm.
 
-use crate::types::{FsrsState, Grade};
+use crate::types::{ArchivalConfig, FsrsState, Grade};
 use chrono::{DateTime, Utc};
 
 /// FSRS-6 scheduler for memory dynamics.
@@ -221,6 +221,42 @@ impl FsrsScheduler {
     /// * `now` - Current timestamp
     pub fn demote(&self, state: &FsrsState, now: DateTime<Utc>) -> FsrsState {
         self.process_review(state, Grade::Again, now)
+    }
+
+    /// Check if a memory is an archival candidate.
+    ///
+    /// A memory is an archival candidate if:
+    /// 1. Its retrievability is below the archive threshold
+    /// 2. It's older than the minimum age
+    /// 3. It's NOT a key memory (is_key must be false)
+    ///
+    /// # Arguments
+    /// * `state` - Current FSRS memory state
+    /// * `created_at` - When the memory was created
+    /// * `is_key` - Whether this memory is marked as key/important
+    /// * `config` - Archival configuration with thresholds
+    /// * `now` - Current timestamp
+    ///
+    /// # Returns
+    /// true if the memory should be considered for archival
+    pub fn is_archival_candidate(
+        &self,
+        state: &FsrsState,
+        created_at: DateTime<Utc>,
+        is_key: bool,
+        config: &ArchivalConfig,
+        now: DateTime<Utc>,
+    ) -> bool {
+        // Key memories are never archived
+        if is_key {
+            return false;
+        }
+
+        // Calculate current retrievability
+        let retrievability = self.current_retrievability(state, now);
+
+        // Use config to check if candidate
+        config.is_candidate(retrievability, created_at, now)
     }
 }
 
@@ -561,5 +597,133 @@ mod tests {
             state.stability
         );
         assert_eq!(demoted.lapses, state.lapses + 1, "Demote should count as lapse");
+    }
+
+    // ============================================================
+    // Tests for archival candidate identification
+    // ============================================================
+
+    #[test]
+    fn test_archival_candidate_low_retrievability_old_not_key() {
+        let scheduler = FsrsScheduler::new();
+        // Use a higher threshold to make the test more practical
+        let config = ArchivalConfig {
+            archive_threshold: 0.5, // 50% retrievability threshold
+            min_age_days: 30,
+            archive_limit: 100,
+        };
+        let now = Utc::now();
+
+        // Old memory with very low stability (will have low retrievability)
+        let mut state = FsrsState::new();
+        state.stability = 0.5; // Low stability (half a day)
+        state.last_review = Some(now - Duration::days(60)); // Reviewed 60 days ago
+
+        let created_at = now - Duration::days(90); // Created 90 days ago
+
+        // Check retrievability - should be very low
+        let r = scheduler.current_retrievability(&state, now);
+
+        // Not a key memory, low R, old -> should be candidate
+        assert!(
+            scheduler.is_archival_candidate(&state, created_at, false, &config, now),
+            "Low-R old non-key memory should be archival candidate (R={})",
+            r
+        );
+    }
+
+    #[test]
+    fn test_archival_candidate_key_memory_excluded() {
+        let scheduler = FsrsScheduler::new();
+        let config = ArchivalConfig::default();
+        let now = Utc::now();
+
+        // Same conditions as above but key=true
+        let mut state = FsrsState::new();
+        state.stability = 0.5;
+        state.last_review = Some(now - Duration::days(60));
+
+        let created_at = now - Duration::days(90);
+
+        // Key memory should NEVER be archived
+        assert!(
+            !scheduler.is_archival_candidate(&state, created_at, true, &config, now),
+            "Key memories should never be archival candidates"
+        );
+    }
+
+    #[test]
+    fn test_archival_candidate_high_retrievability_excluded() {
+        let scheduler = FsrsScheduler::new();
+        let config = ArchivalConfig::default();
+        let now = Utc::now();
+
+        // High stability memory recently reviewed
+        let mut state = FsrsState::new();
+        state.stability = 50.0; // High stability
+        state.last_review = Some(now - Duration::days(5)); // Recent review
+
+        let created_at = now - Duration::days(90);
+
+        // High retrievability -> not candidate
+        assert!(
+            !scheduler.is_archival_candidate(&state, created_at, false, &config, now),
+            "High-R memory should not be archival candidate"
+        );
+    }
+
+    #[test]
+    fn test_archival_candidate_too_young_excluded() {
+        let scheduler = FsrsScheduler::new();
+        let config = ArchivalConfig::default(); // min_age_days = 30
+        let now = Utc::now();
+
+        // Low stability but young memory
+        let mut state = FsrsState::new();
+        state.stability = 0.5;
+        state.last_review = Some(now - Duration::days(20));
+
+        let created_at = now - Duration::days(10); // Only 10 days old
+
+        // Too young -> not candidate
+        assert!(
+            !scheduler.is_archival_candidate(&state, created_at, false, &config, now),
+            "Young memory should not be archival candidate"
+        );
+    }
+
+    #[test]
+    fn test_archival_candidate_custom_config() {
+        let scheduler = FsrsScheduler::new();
+        let config = ArchivalConfig {
+            archive_threshold: 0.8, // High threshold (anything below 80% is candidate)
+            min_age_days: 7,        // Shorter min age
+            archive_limit: 50,
+        };
+        let now = Utc::now();
+
+        let mut state = FsrsState::new();
+        state.stability = 5.0; // Moderate stability
+        state.last_review = Some(now - Duration::days(10)); // 10 days since review
+
+        let created_at = now - Duration::days(30);
+
+        // Check retrievability (unused but documents the value)
+        let _r = scheduler.current_retrievability(&state, now);
+
+        // With high threshold (0.8), even moderate decay should be candidate
+        // S=5, t=10 gives R ~0.85, which is still above 0.8
+        // Let's use longer time since last review
+        let mut state2 = state.clone();
+        state2.last_review = Some(now - Duration::days(20)); // 20 days
+
+        let r2 = scheduler.current_retrievability(&state2, now);
+
+        // With S=5, t=20 should give R < 0.8
+        assert!(
+            scheduler.is_archival_candidate(&state2, created_at, false, &config, now),
+            "Custom config should identify archival candidates (R={})",
+            r2
+        );
     }
 }
