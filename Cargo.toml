@@ -42,6 +42,8 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 
 # Database
 rusqlite = { version = "0.31", features = ["bundled"] }
+sqlite-vec = "0.1"
+zerocopy = { version = "0.8", features = ["derive"] }
 
 # Error handling
 thiserror = "1.0"

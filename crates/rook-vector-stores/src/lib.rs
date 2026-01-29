@@ -113,6 +113,9 @@ mod databricks;
 #[cfg(feature = "faiss")]
 mod faiss;
 
+#[cfg(feature = "sqlite-vec")]
+mod sqlite_vec;
+
 // Public exports
 pub use factory::VectorStoreFactory;
 
@@ -187,6 +190,9 @@ pub use databricks::DatabricksVectorStore;
 
 #[cfg(feature = "faiss")]
 pub use faiss::FaissVectorStore;
+
+#[cfg(feature = "sqlite-vec")]
+pub use sqlite_vec::SqliteVecStore;
 
 // Re-export core types for convenience
 pub use rook_core::traits::{

@@ -50,6 +50,11 @@ prost = { version = "0.12", optional = true }
 scylla = { version = "0.12", optional = true }
 base64 = { version = "0.21", optional = true }
 
+# sqlite-vec backend
+sqlite-vec = { workspace = true, optional = true }
+zerocopy = { workspace = true, optional = true }
+rusqlite = { workspace = true, optional = true }
+
 [features]
 default = ["qdrant"]
 full = [
@@ -61,6 +66,7 @@ full = [
     "pgvector",
     "mysql",
     "sqlite",
+    "sqlite-vec",
     "pinecone",
     "weaviate",
     "chroma",
@@ -106,6 +112,7 @@ supabase = ["dep:sqlx", "dep:pgvector"]
 # Embedded/local backends
 lancedb = []
 duckdb = []
+sqlite-vec = ["dep:sqlite-vec", "dep:zerocopy", "dep:rusqlite"]
 
 # Other backends
 cassandra = ["dep:scylla"]
