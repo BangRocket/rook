@@ -77,6 +77,9 @@ strum = { version = "0.27", features = ["derive"] }
 tokio-test = "0.4"
 mockall = "0.12"
 
+# Scheduling
+tokio-cron-scheduler = "0.14"
+
 # Internal crates
 rook-core = { path = "crates/rook-core" }
 rook-llm = { path = "crates/rook-llm" }

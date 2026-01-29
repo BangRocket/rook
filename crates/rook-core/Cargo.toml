@@ -44,6 +44,9 @@ strum = { workspace = true }
 # Spaced repetition
 fsrs = { workspace = true }
 
+# Scheduling
+tokio-cron-scheduler = { workspace = true }
+
 [dev-dependencies]
 tokio-test = { workspace = true }
 mockall = { workspace = true }
