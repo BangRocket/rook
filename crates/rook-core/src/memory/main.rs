@@ -1,18 +1,21 @@
 //! Core Memory implementation.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::config::MemoryConfig;
 use crate::error::{RookError, RookResult};
+use crate::ingestion::{
+    IngestDecision, IngestResult, PredictionErrorGate, StrengthSignal, StrengthSignalProcessor,
+};
 use crate::traits::{
     Embedder, EmbeddingAction, GraphStore, Llm, Reranker, VectorRecord, VectorSearchResult,
     VectorStore,
 };
 use crate::types::{
-    AddResult, Filter, GraphRelation, MemoryEvent, MemoryItem, MemoryResult, MemoryType,
+    AddResult, Filter, Grade, GraphRelation, MemoryEvent, MemoryItem, MemoryResult, MemoryType,
     Message, MessageInput, MessageRole, SearchResult,
 };
 
@@ -35,6 +38,8 @@ pub struct Memory {
     reranker: Option<Arc<dyn Reranker>>,
     history: Arc<RwLock<HistoryStore>>,
     telemetry: Telemetry,
+    prediction_error_gate: PredictionErrorGate,
+    strength_processor: Mutex<StrengthSignalProcessor>,
 }
 
 impl Memory {
@@ -54,6 +59,10 @@ impl Memory {
         let history = Arc::new(RwLock::new(HistoryStore::new(&config.history_db_path)?));
         let telemetry = Telemetry::new(None);
 
+        // Initialize prediction error gate with LLM for semantic layer
+        let prediction_error_gate = PredictionErrorGate::new(Some(llm.clone()));
+        let strength_processor = Mutex::new(StrengthSignalProcessor::new());
+
         Ok(Self {
             config,
             llm,
@@ -63,6 +72,8 @@ impl Memory {
             reranker,
             history,
             telemetry,
+            prediction_error_gate,
+            strength_processor,
         })
     }
 
@@ -345,6 +356,187 @@ impl Memory {
         }
 
         Ok(())
+    }
+
+    /// Intelligently ingest new content using prediction error gating.
+    ///
+    /// Unlike `add()` which always creates or updates memories based on LLM
+    /// extraction, `smart_ingest()` uses multi-layer detection to decide:
+    /// - Skip: Content is duplicate/redundant
+    /// - Create: Content is novel
+    /// - Update: Content refines existing memory
+    /// - Supersede: Content contradicts existing memory
+    ///
+    /// Returns IngestResult with the decision, affected memory IDs,
+    /// surprise value, and reasoning.
+    pub async fn smart_ingest(
+        &self,
+        content: &str,
+        user_id: Option<String>,
+        agent_id: Option<String>,
+        run_id: Option<String>,
+        metadata: Option<HashMap<String, serde_json::Value>>,
+    ) -> RookResult<IngestResult> {
+        let scope = SessionScope::new(user_id.clone(), agent_id.clone(), run_id.clone());
+        scope.validate()?;
+
+        let filters = scope.to_filters();
+        let filter = self.build_filter(&filters);
+
+        // Get existing memories for comparison (scoped to user/agent)
+        let existing_memories = self.vector_store.list(filter, None).await?;
+
+        // Run prediction error gating
+        let gate_result = self
+            .prediction_error_gate
+            .evaluate(content, &existing_memories, self.embedder.as_ref())
+            .await?;
+
+        // Execute decision and build result
+        let result = match gate_result.decision {
+            IngestDecision::Skip => IngestResult {
+                decision: IngestDecision::Skip,
+                memory_id: None,
+                previous_content: None,
+                related_memory_id: gate_result.related_memory_id,
+                surprise: gate_result.surprise,
+                decided_at_layer: gate_result.layer,
+                reason: gate_result.reason,
+            },
+            IngestDecision::Create => {
+                let metadata = scope.to_metadata(metadata);
+                let memory_id = self.create_memory(content, &metadata).await?;
+
+                IngestResult {
+                    decision: IngestDecision::Create,
+                    memory_id: Some(memory_id),
+                    previous_content: None,
+                    related_memory_id: None,
+                    surprise: gate_result.surprise,
+                    decided_at_layer: gate_result.layer,
+                    reason: gate_result.reason,
+                }
+            }
+            IngestDecision::Update => {
+                let related_id = gate_result.related_memory_id.ok_or_else(|| {
+                    RookError::internal("Update decision requires related memory ID")
+                })?;
+
+                // Get previous content
+                let previous = self.get(&related_id).await?.map(|m| m.memory);
+
+                // Update the memory
+                self.update(&related_id, content).await?;
+
+                IngestResult {
+                    decision: IngestDecision::Update,
+                    memory_id: Some(related_id.clone()),
+                    previous_content: previous,
+                    related_memory_id: Some(related_id),
+                    surprise: gate_result.surprise,
+                    decided_at_layer: gate_result.layer,
+                    reason: gate_result.reason,
+                }
+            }
+            IngestDecision::Supersede => {
+                let superseded_id = gate_result.related_memory_id.ok_or_else(|| {
+                    RookError::internal("Supersede decision requires related memory ID")
+                })?;
+
+                // Get previous content
+                let previous = self.get(&superseded_id).await?.map(|m| m.memory);
+
+                // Create new memory with higher initial strength due to surprise
+                let metadata = scope.to_metadata(metadata);
+                let new_memory_id = self.create_memory(content, &metadata).await?;
+
+                // Mark old memory as superseded (update metadata)
+                if let Some(mut record) = self.vector_store.get(&superseded_id).await? {
+                    record.payload.insert(
+                        "superseded_by".to_string(),
+                        serde_json::Value::String(new_memory_id.clone()),
+                    );
+                    record.payload.insert(
+                        "superseded_at".to_string(),
+                        serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+                    );
+                    self.vector_store
+                        .update(&superseded_id, None, Some(record.payload))
+                        .await?;
+                }
+
+                // Process contradiction strength signal
+                {
+                    let mut processor = self.strength_processor.lock().unwrap();
+                    processor.process(StrengthSignal::Contradiction {
+                        winner_id: new_memory_id.clone(),
+                        loser_id: superseded_id.clone(),
+                    });
+                }
+
+                IngestResult {
+                    decision: IngestDecision::Supersede,
+                    memory_id: Some(new_memory_id),
+                    previous_content: previous,
+                    related_memory_id: Some(superseded_id),
+                    surprise: gate_result.surprise,
+                    decided_at_layer: gate_result.layer,
+                    reason: gate_result.reason,
+                }
+            }
+        };
+
+        // Telemetry
+        let (keys, encoded_ids) = process_telemetry_filters(&filters);
+        self.telemetry
+            .capture_event(
+                "rook.smart_ingest",
+                HashMap::from([
+                    ("keys".to_string(), serde_json::to_value(&keys).unwrap()),
+                    (
+                        "encoded_ids".to_string(),
+                        serde_json::to_value(&encoded_ids).unwrap(),
+                    ),
+                    (
+                        "decision".to_string(),
+                        serde_json::to_value(&result.decision).unwrap(),
+                    ),
+                    (
+                        "layer".to_string(),
+                        serde_json::to_value(format!("{:?}", result.decided_at_layer)).unwrap(),
+                    ),
+                    (
+                        "surprise".to_string(),
+                        serde_json::Value::Number(
+                            serde_json::Number::from_f64(result.surprise as f64).unwrap(),
+                        ),
+                    ),
+                ]),
+            )
+            .await;
+
+        Ok(result)
+    }
+
+    /// Get pending strength signal updates
+    ///
+    /// Returns the updates collected since last clear. Used by
+    /// external FSRS integration to apply grade updates.
+    pub fn get_pending_strength_updates(&self) -> HashMap<String, Grade> {
+        let processor = self.strength_processor.lock().unwrap();
+        processor.get_pending_updates()
+    }
+
+    /// Clear pending strength signal updates
+    pub fn clear_strength_updates(&self) {
+        let mut processor = self.strength_processor.lock().unwrap();
+        processor.clear();
+    }
+
+    /// Process a strength signal
+    pub fn process_strength_signal(&self, signal: StrengthSignal) {
+        let mut processor = self.strength_processor.lock().unwrap();
+        processor.process(signal);
     }
 
     // Private helper methods

@@ -31,8 +31,8 @@ pub use cognitive::{ArchivalCandidate, CognitiveStore, FsrsScheduler};
 pub use config::MemoryConfig;
 pub use error::{RookError, RookResult};
 pub use ingestion::{
-    DetectionLayer, GatingThresholds, IngestDecision, IngestResult, StrengthSignal,
-    StrengthSignalProcessor,
+    DetectionLayer, GateResult, GatingThresholds, IngestDecision, IngestResult,
+    PredictionErrorGate, StrengthSignal, StrengthSignalProcessor,
 };
 pub use memory::Memory;
 pub use traits::{

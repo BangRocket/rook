@@ -351,6 +351,11 @@ impl RookError {
         }
     }
 
+    /// Create an internal error.
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::Internal(message.into())
+    }
+
     /// Get the error code.
     pub fn code(&self) -> ErrorCode {
         match self {
