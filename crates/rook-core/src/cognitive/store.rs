@@ -525,6 +525,59 @@ impl CognitiveStore {
     }
 
     // =========================================================================
+    // Dual-Strength Methods (Bjork Model - CON-07)
+    // =========================================================================
+
+    /// Get DualStrength for a memory.
+    ///
+    /// Returns None if the memory doesn't have a stored state.
+    pub fn get_dual_strength(
+        &self,
+        memory_id: &str,
+    ) -> RookResult<Option<crate::types::DualStrength>> {
+        let conn = self.conn.lock().map_err(|e| RookError::database(e.to_string()))?;
+
+        let result = conn
+            .query_row(
+                "SELECT storage_strength, retrieval_strength FROM fsrs_states WHERE memory_id = ?1",
+                params![memory_id],
+                |row| {
+                    Ok(crate::types::DualStrength {
+                        storage_strength: row.get::<_, f32>(0).unwrap_or(0.5),
+                        retrieval_strength: row.get::<_, f32>(1).unwrap_or(1.0),
+                    })
+                },
+            )
+            .optional()?;
+
+        Ok(result)
+    }
+
+    /// Save DualStrength for a memory.
+    ///
+    /// Updates only the dual_strength columns, preserving other state.
+    pub fn save_dual_strength(
+        &self,
+        memory_id: &str,
+        dual: &crate::types::DualStrength,
+    ) -> RookResult<bool> {
+        let conn = self.conn.lock().map_err(|e| RookError::database(e.to_string()))?;
+
+        let updated = conn.execute(
+            "UPDATE fsrs_states SET storage_strength = ?1, retrieval_strength = ?2, updated_at = ?3
+             WHERE memory_id = ?4",
+            params![
+                dual.storage_strength,
+                dual.retrieval_strength,
+                Utc::now().to_rfc3339(),
+                memory_id
+            ],
+        )?;
+
+        Ok(updated > 0)
+    }
+
+    // =========================================================================
     // Consolidation Phase Methods
     // =========================================================================
 
@@ -1051,6 +1104,59 @@ mod tests {
 
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].memory_id, "mem2");
+    }
+
+    // =========================================================================
+    // Dual-Strength Tests
+    // =========================================================================
+
+    #[test]
+    fn test_dual_strength_default_values() {
+        let store = CognitiveStore::in_memory().unwrap();
+
+        let state = create_test_state(10.0, 5);
+        store.save_state("mem1", &state, false, None).unwrap();
+
+        let dual = store.get_dual_strength("mem1").unwrap().unwrap();
+
+        // Default values: storage=0.5, retrieval=1.0
+        assert!((dual.storage_strength - 0.5).abs() < 0.001);
+        assert!((dual.retrieval_strength - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_save_and_get_dual_strength() {
+        let store = CognitiveStore::in_memory().unwrap();
+
+        let state = create_test_state(10.0, 5);
+        store.save_state("mem1", &state, false, None).unwrap();
+
+        // Update dual strength
+        let updated = crate::types::DualStrength {
+            storage_strength: 0.8,
+            retrieval_strength: 0.6,
+        };
+        assert!(store.save_dual_strength("mem1", &updated).unwrap());
+
+        // Verify update
+        let dual = store.get_dual_strength("mem1").unwrap().unwrap();
+        assert!((dual.storage_strength - 0.8).abs() < 0.001);
+        assert!((dual.retrieval_strength - 0.6).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_dual_strength_nonexistent_memory() {
+        let store = CognitiveStore::in_memory().unwrap();
+
+        // Getting from nonexistent memory returns None
+        assert!(store.get_dual_strength("nonexistent").unwrap().is_none());
+
+        // Saving to nonexistent memory returns false (no rows updated)
+        let dual = crate::types::DualStrength {
+            storage_strength: 0.5,
+            retrieval_strength: 1.0,
+        };
+        assert!(!store.save_dual_strength("nonexistent", &dual).unwrap());
     }
 
     // =========================================================================
