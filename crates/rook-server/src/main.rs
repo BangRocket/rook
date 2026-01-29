@@ -22,12 +22,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     // Get configuration from environment
-    let host = std::env::var("MEM0_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-    let port: u16 = std::env::var("MEM0_PORT")
+    let host = std::env::var("ROOK_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port: u16 = std::env::var("ROOK_PORT")
         .unwrap_or_else(|_| "8080".to_string())
         .parse()
-        .expect("MEM0_PORT must be a valid port number");
-    let require_auth = std::env::var("MEM0_REQUIRE_AUTH").is_ok();
+        .expect("ROOK_PORT must be a valid port number");
+    let require_auth = std::env::var("ROOK_REQUIRE_AUTH").is_ok();
 
     // Create application state
     let state = AppState::new();

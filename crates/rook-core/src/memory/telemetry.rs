@@ -16,7 +16,7 @@ pub struct Telemetry {
 impl Telemetry {
     /// Create a new telemetry client.
     pub fn new(user_id: Option<String>) -> Self {
-        let enabled = std::env::var("MEM0_TELEMETRY")
+        let enabled = std::env::var("ROOK_TELEMETRY")
             .map(|v| !matches!(v.to_lowercase().as_str(), "false" | "0" | "no"))
             .unwrap_or(true);
 

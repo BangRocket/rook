@@ -94,12 +94,12 @@ impl MemoryClient {
 
     /// Create a client from environment variables.
     pub fn from_env() -> RookResult<Self> {
-        let api_key = std::env::var("MEM0_API_KEY")
-            .map_err(|_| RookError::Configuration("MEM0_API_KEY not set".to_string()))?;
+        let api_key = std::env::var("ROOK_API_KEY")
+            .map_err(|_| RookError::Configuration("ROOK_API_KEY not set".to_string()))?;
 
-        let base_url = std::env::var("MEM0_BASE_URL").ok();
-        let org_id = std::env::var("MEM0_ORG_ID").ok();
-        let project_id = std::env::var("MEM0_PROJECT_ID").ok();
+        let base_url = std::env::var("ROOK_BASE_URL").ok();
+        let org_id = std::env::var("ROOK_ORG_ID").ok();
+        let project_id = std::env::var("ROOK_PROJECT_ID").ok();
 
         Self::with_options(
             &api_key,

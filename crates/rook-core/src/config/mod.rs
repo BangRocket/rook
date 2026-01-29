@@ -139,7 +139,7 @@ impl MemoryConfig {
         let mut config = Self::default();
 
         // LLM configuration
-        if let Ok(model) = std::env::var("MEM0_LLM_MODEL") {
+        if let Ok(model) = std::env::var("ROOK_LLM_MODEL") {
             config.llm.config.model = model;
         }
         if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
@@ -148,7 +148,7 @@ impl MemoryConfig {
         }
 
         // Vector store configuration
-        if let Ok(provider) = std::env::var("MEM0_VECTOR_STORE_PROVIDER") {
+        if let Ok(provider) = std::env::var("ROOK_VECTOR_STORE_PROVIDER") {
             config.vector_store.provider = match provider.to_lowercase().as_str() {
                 "qdrant" => VectorStoreProvider::Qdrant,
                 "pinecone" => VectorStoreProvider::Pinecone,
@@ -160,7 +160,7 @@ impl MemoryConfig {
         }
 
         // History database path
-        if let Ok(path) = std::env::var("MEM0_HISTORY_DB_PATH") {
+        if let Ok(path) = std::env::var("ROOK_HISTORY_DB_PATH") {
             config.history_db_path = PathBuf::from(path);
         }
 

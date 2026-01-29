@@ -44,9 +44,9 @@ pub async fn auth_middleware(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Check for API key in header if MEM0_REQUIRE_AUTH is set
-    if std::env::var("MEM0_REQUIRE_AUTH").is_ok() {
-        let expected_key = std::env::var("MEM0_API_KEY").unwrap_or_default();
+    // Check for API key in header if ROOK_REQUIRE_AUTH is set
+    if std::env::var("ROOK_REQUIRE_AUTH").is_ok() {
+        let expected_key = std::env::var("ROOK_API_KEY").unwrap_or_default();
 
         if !expected_key.is_empty() {
             let auth_header = request
