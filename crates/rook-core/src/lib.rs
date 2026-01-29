@@ -20,6 +20,7 @@
 
 pub mod cognitive;
 pub mod config;
+pub mod consolidation;
 pub mod error;
 pub mod ingestion;
 pub mod memory;
@@ -29,6 +30,7 @@ pub mod types;
 // Re-export commonly used types
 pub use cognitive::{ArchivalCandidate, CognitiveStore, FsrsScheduler};
 pub use config::MemoryConfig;
+pub use consolidation::{ConsolidationPhase, SynapticTag};
 pub use error::{RookError, RookResult};
 pub use ingestion::{
     DetectionLayer, GateResult, GatingThresholds, IngestDecision, IngestResult,
