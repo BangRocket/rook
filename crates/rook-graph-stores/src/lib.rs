@@ -22,6 +22,9 @@
 mod factory;
 
 #[cfg(feature = "embedded")]
+pub mod activation;
+
+#[cfg(feature = "embedded")]
 pub mod embedded;
 
 #[cfg(feature = "embedded")]
