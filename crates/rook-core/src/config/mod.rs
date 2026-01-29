@@ -7,6 +7,7 @@ use crate::traits::{
     EmbedderConfig, EmbedderProvider, GraphStoreConfig, LlmConfig, RerankerConfig,
     VectorStoreConfig, VectorStoreProvider,
 };
+use crate::types::{CategoryConfig, KeyMemoryConfig};
 
 /// LLM provider type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -83,6 +84,10 @@ pub struct MemoryConfig {
     /// Reranker configuration (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reranker: Option<RerankerConfig>,
+    /// Category taxonomy configuration.
+    pub category: CategoryConfig,
+    /// Key memory handling configuration.
+    pub key_memory: KeyMemoryConfig,
     /// Path to history database.
     pub history_db_path: PathBuf,
     /// API version.
@@ -107,6 +112,8 @@ impl Default for MemoryConfig {
             embedder: EmbedderProviderConfig::default(),
             graph_store: None,
             reranker: None,
+            category: CategoryConfig::default(),
+            key_memory: KeyMemoryConfig::default(),
             history_db_path: rook_dir.join("history.db"),
             version: "v1.1".to_string(),
             custom_fact_extraction_prompt: None,
@@ -225,6 +232,18 @@ impl MemoryConfigBuilder {
     /// Set custom update memory prompt.
     pub fn custom_update_memory_prompt(mut self, prompt: impl Into<String>) -> Self {
         self.config.custom_update_memory_prompt = Some(prompt.into());
+        self
+    }
+
+    /// Set category configuration.
+    pub fn category(mut self, config: CategoryConfig) -> Self {
+        self.config.category = config;
+        self
+    }
+
+    /// Set key memory configuration.
+    pub fn key_memory(mut self, config: KeyMemoryConfig) -> Self {
+        self.config.key_memory = config;
         self
     }
 
