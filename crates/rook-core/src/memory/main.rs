@@ -539,6 +539,63 @@ impl Memory {
         processor.process(signal);
     }
 
+    /// Get key memories for a scope.
+    ///
+    /// Key memories are high-importance memories marked with `is_key=true`.
+    /// They are exempt from decay and archival, and are always included in
+    /// search results (up to `max_key_memories` config limit).
+    pub async fn get_key_memories(
+        &self,
+        user_id: Option<String>,
+        agent_id: Option<String>,
+        run_id: Option<String>,
+    ) -> RookResult<Vec<MemoryItem>> {
+        let scope = SessionScope::new(user_id, agent_id, run_id);
+        scope.validate()?;
+
+        let mut filters = scope.to_filters();
+        // Add is_key=true filter
+        filters.insert("is_key".to_string(), serde_json::Value::Bool(true));
+
+        let filter = self.build_filter(&filters);
+        let limit = Some(self.config.key_memory.max_key_memories);
+
+        let records = self.vector_store.list(filter, limit).await?;
+
+        Ok(records
+            .into_iter()
+            .map(|r| {
+                let mut item = self.record_to_memory_item(r, None);
+                item.is_key = true;
+                item
+            })
+            .collect())
+    }
+
+    /// Merge key memories with search results.
+    ///
+    /// Key memories are prepended to search results, with deduplication
+    /// to ensure a memory doesn't appear twice (once as key, once from search).
+    fn merge_with_key_memories(
+        key_memories: Vec<MemoryItem>,
+        search_results: Vec<MemoryItem>,
+    ) -> Vec<MemoryItem> {
+        // Collect IDs of key memories for deduplication
+        let key_ids: std::collections::HashSet<_> =
+            key_memories.iter().map(|m| m.id.clone()).collect();
+
+        // Filter search results to remove any that are already in key memories
+        let deduplicated_results: Vec<MemoryItem> = search_results
+            .into_iter()
+            .filter(|m| !key_ids.contains(&m.id))
+            .collect();
+
+        // Prepend key memories to search results
+        let mut merged = key_memories;
+        merged.extend(deduplicated_results);
+        merged
+    }
+
     // Private helper methods
 
     async fn add_to_vector_store(
