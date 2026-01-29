@@ -131,6 +131,28 @@ impl SynapticTag {
         self.current_strength() >= threshold
     }
 
+    /// Check validity at a specific time with a custom threshold.
+    ///
+    /// Useful for behavioral tagging where we check validity at the time
+    /// of a novel event rather than the current time.
+    pub fn is_valid_at(&self, at: DateTime<Utc>, threshold: f32) -> bool {
+        self.strength_at(at) >= threshold as f64
+    }
+
+    /// Create a default tag for a memory at a specific time.
+    ///
+    /// Uses default strength of 1.0 and default tau.
+    pub fn default_for(memory_id: String, at: DateTime<Utc>) -> Self {
+        Self {
+            memory_id,
+            initial_strength: 1.0,
+            tau: DEFAULT_TAU_MINUTES,
+            tagged_at: at,
+            prp_available: false,
+            prp_available_at: None,
+        }
+    }
+
     /// Check if this memory can be consolidated.
     ///
     /// Consolidation requires:
@@ -138,6 +160,14 @@ impl SynapticTag {
     /// 2. PRPs are available for capture
     pub fn can_consolidate(&self) -> bool {
         self.is_valid() && self.prp_available
+    }
+
+    /// Check if this memory can be consolidated at a specific time with a custom threshold.
+    ///
+    /// Used by ConsolidationManager to check consolidation eligibility with
+    /// configurable thresholds.
+    pub fn can_consolidate_at(&self, at: DateTime<Utc>, threshold: f32) -> bool {
+        self.is_valid_at(at, threshold) && self.prp_available
     }
 
     /// Mark PRPs as available for this tag.
