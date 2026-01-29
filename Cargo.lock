@@ -5526,6 +5526,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "strum 0.27.2",
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",
