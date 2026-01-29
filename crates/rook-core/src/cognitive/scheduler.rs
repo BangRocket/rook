@@ -129,6 +129,99 @@ impl FsrsScheduler {
     pub fn decay(&self) -> f32 {
         self.decay
     }
+
+    /// Process a review and update memory state based on grade.
+    ///
+    /// This is the core FSRS algorithm: based on the grade (quality of recall),
+    /// the memory's stability and difficulty are updated.
+    ///
+    /// # Arguments
+    /// * `state` - Current FSRS memory state
+    /// * `grade` - Quality of recall (Again, Hard, Good, Easy)
+    /// * `now` - Current timestamp
+    ///
+    /// # Returns
+    /// New FSRS state with updated stability, difficulty, reps, and lapses
+    pub fn process_review(&self, state: &FsrsState, grade: Grade, now: DateTime<Utc>) -> FsrsState {
+        // Calculate current retrievability
+        let retrievability = self.current_retrievability(state, now);
+
+        // Get the rating as u32 for FSRS calculations (1-4)
+        let rating = grade.to_rating() as u32;
+
+        // Calculate new stability based on FSRS-6 algorithm
+        // For failed recall (Again): stability decreases significantly
+        // For successful recall: stability increases based on grade
+        let new_stability = if grade == Grade::Again {
+            // Lapse case: stability reset to a fraction
+            // FSRS uses: S' = w[11] * D^(-w[12]) * ((S+1)^w[13] - 1) * e^(w[14]*(1-R))
+            // Simplified: multiply by lapse factor based on retrievability
+            let lapse_factor = 0.3 * (1.0 - retrievability).max(0.1);
+            (state.stability * lapse_factor).max(0.1)
+        } else {
+            // Successful recall: stability increases
+            // FSRS: S' = S * (e^(w[8]) * (11 - D) * S^(-w[9]) * (e^(w[10]*(1-R)) - 1) * grade_modifier + 1)
+            // Simplified model using grade-based multipliers
+            let grade_multiplier = match grade {
+                Grade::Hard => 1.2,
+                Grade::Good => 1.5,
+                Grade::Easy => 2.0,
+                Grade::Again => unreachable!(),
+            };
+
+            // Lower retrievability at review time = higher stability gain (desirable difficulty)
+            // But cap the boost to prevent extreme values
+            let retrievability_boost = ((1.0 - retrievability) * 0.5 + 1.0).min(1.5);
+
+            state.stability * grade_multiplier * retrievability_boost
+        };
+
+        // Update difficulty based on grade
+        // Again increases difficulty, Easy decreases it
+        // FSRS: D' = w[7] * D_0(4) + (1 - w[7]) * (D - w[6] * (G - 3))
+        // Simplified: adjust by grade distance from "Good" (3)
+        let grade_offset = rating as f32 - 3.0; // -2, -1, 0, +1
+        let difficulty_change = -grade_offset * 0.5; // Positive for Again, negative for Easy
+        let new_difficulty = (state.difficulty + difficulty_change).clamp(1.0, 10.0);
+
+        // Update lapses count (only Again counts as lapse)
+        let new_lapses = if grade == Grade::Again {
+            state.lapses + 1
+        } else {
+            state.lapses
+        };
+
+        FsrsState {
+            stability: new_stability,
+            difficulty: new_difficulty,
+            last_review: Some(now),
+            reps: state.reps + 1,
+            lapses: new_lapses,
+        }
+    }
+
+    /// Promote a memory's stability (convenience wrapper around process_review).
+    ///
+    /// Used when a memory is explicitly promoted/reinforced with a given grade.
+    ///
+    /// # Arguments
+    /// * `state` - Current FSRS memory state
+    /// * `grade` - Quality grade (typically Good or Easy for promotion)
+    /// * `now` - Current timestamp
+    pub fn promote(&self, state: &FsrsState, grade: Grade, now: DateTime<Utc>) -> FsrsState {
+        self.process_review(state, grade, now)
+    }
+
+    /// Demote a memory's stability (equivalent to Again grade).
+    ///
+    /// Used when a memory should be weakened/forgotten.
+    ///
+    /// # Arguments
+    /// * `state` - Current FSRS memory state
+    /// * `now` - Current timestamp
+    pub fn demote(&self, state: &FsrsState, now: DateTime<Utc>) -> FsrsState {
+        self.process_review(state, Grade::Again, now)
+    }
 }
 
 impl Default for FsrsScheduler {
@@ -285,5 +378,188 @@ mod tests {
             r_high_stability,
             r_low_stability
         );
+    }
+
+    // ============================================================
+    // Tests for process_review, promote, demote
+    // ============================================================
+
+    #[test]
+    fn test_process_review_again_decreases_stability() {
+        let scheduler = FsrsScheduler::new();
+
+        // Start with a state that has good stability
+        let mut state = FsrsState::new();
+        state.stability = 10.0;
+        state.difficulty = 5.0;
+        state.last_review = Some(Utc::now() - Duration::days(5));
+        state.reps = 5;
+
+        let initial_stability = state.stability;
+
+        // Process a review with Again grade (failed recall)
+        let new_state = scheduler.process_review(&state, Grade::Again, Utc::now());
+
+        // Again should decrease stability significantly
+        assert!(
+            new_state.stability < initial_stability,
+            "Again grade should decrease stability: {} < {}",
+            new_state.stability,
+            initial_stability
+        );
+        // Lapses should increase
+        assert_eq!(new_state.lapses, state.lapses + 1);
+        // Reps should still increase (it's still a review)
+        assert_eq!(new_state.reps, state.reps + 1);
+    }
+
+    #[test]
+    fn test_process_review_good_increases_stability() {
+        let scheduler = FsrsScheduler::new();
+
+        let mut state = FsrsState::new();
+        state.stability = 5.0;
+        state.difficulty = 5.0;
+        state.last_review = Some(Utc::now() - Duration::days(3));
+        state.reps = 3;
+
+        let initial_stability = state.stability;
+
+        // Process a review with Good grade
+        let new_state = scheduler.process_review(&state, Grade::Good, Utc::now());
+
+        // Good should increase stability
+        assert!(
+            new_state.stability > initial_stability,
+            "Good grade should increase stability: {} > {}",
+            new_state.stability,
+            initial_stability
+        );
+        // No lapse for successful recall
+        assert_eq!(new_state.lapses, state.lapses);
+        // Reps should increase
+        assert_eq!(new_state.reps, state.reps + 1);
+    }
+
+    #[test]
+    fn test_process_review_hard_increases_stability_less() {
+        let scheduler = FsrsScheduler::new();
+
+        let mut state = FsrsState::new();
+        state.stability = 5.0;
+        state.difficulty = 5.0;
+        state.last_review = Some(Utc::now() - Duration::days(3));
+        state.reps = 3;
+
+        let initial_stability = state.stability;
+
+        // Process with Hard grade
+        let hard_state = scheduler.process_review(&state, Grade::Hard, Utc::now());
+        // Process with Good grade (from same initial state)
+        let good_state = scheduler.process_review(&state, Grade::Good, Utc::now());
+
+        // Hard should still increase stability (successful recall)
+        assert!(
+            hard_state.stability > initial_stability,
+            "Hard grade should increase stability: {} > {}",
+            hard_state.stability,
+            initial_stability
+        );
+        // But less than Good
+        assert!(
+            hard_state.stability < good_state.stability,
+            "Hard should increase less than Good: {} < {}",
+            hard_state.stability,
+            good_state.stability
+        );
+    }
+
+    #[test]
+    fn test_process_review_easy_increases_stability_most() {
+        let scheduler = FsrsScheduler::new();
+
+        let mut state = FsrsState::new();
+        state.stability = 5.0;
+        state.difficulty = 5.0;
+        state.last_review = Some(Utc::now() - Duration::days(3));
+        state.reps = 3;
+
+        // Process with all grades
+        let good_state = scheduler.process_review(&state, Grade::Good, Utc::now());
+        let easy_state = scheduler.process_review(&state, Grade::Easy, Utc::now());
+
+        // Easy should increase stability more than Good
+        assert!(
+            easy_state.stability > good_state.stability,
+            "Easy should increase more than Good: {} > {}",
+            easy_state.stability,
+            good_state.stability
+        );
+    }
+
+    #[test]
+    fn test_process_review_updates_difficulty() {
+        let scheduler = FsrsScheduler::new();
+
+        let mut state = FsrsState::new();
+        state.stability = 5.0;
+        state.difficulty = 5.0;
+        state.last_review = Some(Utc::now() - Duration::days(3));
+        state.reps = 3;
+
+        // Again should increase difficulty (memory is harder)
+        let again_state = scheduler.process_review(&state, Grade::Again, Utc::now());
+        assert!(
+            again_state.difficulty > state.difficulty,
+            "Again should increase difficulty"
+        );
+
+        // Easy should decrease difficulty (memory is easier)
+        let easy_state = scheduler.process_review(&state, Grade::Easy, Utc::now());
+        assert!(
+            easy_state.difficulty < state.difficulty,
+            "Easy should decrease difficulty"
+        );
+    }
+
+    #[test]
+    fn test_promote_increases_stability() {
+        let scheduler = FsrsScheduler::new();
+
+        let mut state = FsrsState::new();
+        state.stability = 5.0;
+        state.difficulty = 5.0;
+        state.last_review = Some(Utc::now() - Duration::days(2));
+        state.reps = 2;
+
+        // Promote with Good grade
+        let promoted = scheduler.promote(&state, Grade::Good, Utc::now());
+
+        assert!(
+            promoted.stability > state.stability,
+            "Promote should increase stability"
+        );
+    }
+
+    #[test]
+    fn test_demote_decreases_stability() {
+        let scheduler = FsrsScheduler::new();
+
+        let mut state = FsrsState::new();
+        state.stability = 10.0;
+        state.difficulty = 5.0;
+        state.last_review = Some(Utc::now() - Duration::days(5));
+        state.reps = 5;
+
+        // Demote (equivalent to Again)
+        let demoted = scheduler.demote(&state, Utc::now());
+
+        assert!(
+            demoted.stability < state.stability,
+            "Demote should decrease stability: {} < {}",
+            demoted.stability,
+            state.stability
+        );
+        assert_eq!(demoted.lapses, state.lapses + 1, "Demote should count as lapse");
     }
 }
