@@ -2,12 +2,17 @@
 //!
 //! Provides SQLite-backed storage for FSRS memory states,
 //! enabling state retrieval, persistence, and archival candidate queries.
+//!
+//! Also provides storage for synaptic tags and consolidation phases
+//! for the STC (Synaptic Tagging and Capture) memory consolidation model.
 
+use crate::consolidation::{ConsolidationPhase, SynapticTag};
 use crate::error::{RookError, RookResult};
 use crate::types::{ArchivalConfig, FsrsState};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 /// SQLite-backed store for FSRS cognitive state.
@@ -47,6 +52,7 @@ impl CognitiveStore {
 
         conn.execute_batch(
             "
+            -- FSRS states table for spaced repetition scheduling
             CREATE TABLE IF NOT EXISTS fsrs_states (
                 memory_id TEXT PRIMARY KEY,
                 stability REAL NOT NULL,
@@ -55,6 +61,7 @@ impl CognitiveStore {
                 reps INTEGER NOT NULL DEFAULT 0,
                 lapses INTEGER NOT NULL DEFAULT 0,
                 is_key INTEGER NOT NULL DEFAULT 0,
+                consolidation_phase TEXT NOT NULL DEFAULT 'immediate',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -63,6 +70,22 @@ impl CognitiveStore {
             CREATE INDEX IF NOT EXISTS idx_fsrs_states_stability ON fsrs_states(stability);
             CREATE INDEX IF NOT EXISTS idx_fsrs_states_last_review ON fsrs_states(last_review);
             CREATE INDEX IF NOT EXISTS idx_fsrs_states_created_at ON fsrs_states(created_at);
+            CREATE INDEX IF NOT EXISTS idx_fsrs_states_consolidation_phase ON fsrs_states(consolidation_phase);
+
+            -- Synaptic tags table for STC memory consolidation
+            CREATE TABLE IF NOT EXISTS synaptic_tags (
+                memory_id TEXT PRIMARY KEY,
+                initial_strength REAL NOT NULL,
+                tau REAL NOT NULL,
+                tagged_at TEXT NOT NULL,
+                prp_available INTEGER NOT NULL DEFAULT 0,
+                prp_available_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_synaptic_tags_tagged_at ON synaptic_tags(tagged_at);
+            CREATE INDEX IF NOT EXISTS idx_synaptic_tags_prp_available ON synaptic_tags(prp_available);
             ",
         )?;
 
@@ -267,6 +290,294 @@ impl CognitiveStore {
             })?;
 
         Ok(count as usize)
+    }
+
+    // =========================================================================
+    // Synaptic Tag Methods
+    // =========================================================================
+
+    /// Save a synaptic tag for a memory.
+    ///
+    /// Creates or updates the tag for the given memory ID.
+    pub fn save_synaptic_tag(&self, tag: &SynapticTag) -> RookResult<()> {
+        let conn = self.conn.lock().map_err(|e| RookError::database(e.to_string()))?;
+
+        let now = Utc::now();
+        let prp_available_at_str = tag.prp_available_at.map(|dt| dt.to_rfc3339());
+
+        conn.execute(
+            "INSERT OR REPLACE INTO synaptic_tags
+             (memory_id, initial_strength, tau, tagged_at, prp_available, prp_available_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6,
+                     COALESCE((SELECT created_at FROM synaptic_tags WHERE memory_id = ?1), ?7),
+                     ?8)",
+            params![
+                tag.memory_id,
+                tag.initial_strength,
+                tag.tau,
+                tag.tagged_at.to_rfc3339(),
+                if tag.prp_available { 1 } else { 0 },
+                prp_available_at_str,
+                now.to_rfc3339(),
+                now.to_rfc3339(),
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    /// Get a synaptic tag for a memory.
+    ///
+    /// Returns None if the memory doesn't have a stored tag.
+    pub fn get_synaptic_tag(&self, memory_id: &str) -> RookResult<Option<SynapticTag>> {
+        let conn = self.conn.lock().map_err(|e| RookError::database(e.to_string()))?;
+
+        let result = conn
+            .query_row(
+                "SELECT memory_id, initial_strength, tau, tagged_at, prp_available, prp_available_at
+                 FROM synaptic_tags WHERE memory_id = ?1",
+                params![memory_id],
+                |row| {
+                    let memory_id: String = row.get(0)?;
+                    let initial_strength: f64 = row.get(1)?;
+                    let tau: f64 = row.get(2)?;
+                    let tagged_at_str: String = row.get(3)?;
+                    let prp_available: i32 = row.get(4)?;
+                    let prp_available_at_str: Option<String> = row.get(5)?;
+
+                    let tagged_at = DateTime::parse_from_rfc3339(&tagged_at_str)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now());
+
+                    let prp_available_at = prp_available_at_str.and_then(|s| {
+                        DateTime::parse_from_rfc3339(&s)
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .ok()
+                    });
+
+                    Ok(SynapticTag {
+                        memory_id,
+                        initial_strength,
+                        tau,
+                        tagged_at,
+                        prp_available: prp_available != 0,
+                        prp_available_at,
+                    })
+                },
+            )
+            .optional()?;
+
+        Ok(result)
+    }
+
+    /// Delete a synaptic tag for a memory.
+    pub fn delete_synaptic_tag(&self, memory_id: &str) -> RookResult<bool> {
+        let conn = self.conn.lock().map_err(|e| RookError::database(e.to_string()))?;
+
+        let deleted = conn.execute(
+            "DELETE FROM synaptic_tags WHERE memory_id = ?1",
+            params![memory_id],
+        )?;
+
+        Ok(deleted > 0)
+    }
+
+    /// Get synaptic tags created within a time range.
+    ///
+    /// Useful for behavioral tagging queries - finding tags that might
+    /// benefit from a recent novel/emotional event providing PRPs.
+    ///
+    /// # Arguments
+    ///
+    /// * `start` - Start of the time range (inclusive)
+    /// * `end` - End of the time range (inclusive)
+    ///
+    /// Returns tags ordered by tagged_at descending (most recent first).
+    pub fn get_tags_in_time_range(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> RookResult<Vec<SynapticTag>> {
+        let conn = self.conn.lock().map_err(|e| RookError::database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT memory_id, initial_strength, tau, tagged_at, prp_available, prp_available_at
+             FROM synaptic_tags
+             WHERE tagged_at >= ?1 AND tagged_at <= ?2
+             ORDER BY tagged_at DESC",
+        )?;
+
+        let tags = stmt
+            .query_map(params![start.to_rfc3339(), end.to_rfc3339()], |row| {
+                let memory_id: String = row.get(0)?;
+                let initial_strength: f64 = row.get(1)?;
+                let tau: f64 = row.get(2)?;
+                let tagged_at_str: String = row.get(3)?;
+                let prp_available: i32 = row.get(4)?;
+                let prp_available_at_str: Option<String> = row.get(5)?;
+
+                let tagged_at = DateTime::parse_from_rfc3339(&tagged_at_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now());
+
+                let prp_available_at = prp_available_at_str.and_then(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .ok()
+                });
+
+                Ok(SynapticTag {
+                    memory_id,
+                    initial_strength,
+                    tau,
+                    tagged_at,
+                    prp_available: prp_available != 0,
+                    prp_available_at,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(tags)
+    }
+
+    /// Get all tags without PRP that are still valid (haven't decayed below threshold).
+    ///
+    /// Useful for finding tags that could benefit from behavioral tagging.
+    pub fn get_tags_needing_prp(&self, validity_threshold: f64) -> RookResult<Vec<SynapticTag>> {
+        let conn = self.conn.lock().map_err(|e| RookError::database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT memory_id, initial_strength, tau, tagged_at, prp_available, prp_available_at
+             FROM synaptic_tags
+             WHERE prp_available = 0
+             ORDER BY tagged_at DESC",
+        )?;
+
+        let tags: Vec<SynapticTag> = stmt
+            .query_map([], |row| {
+                let memory_id: String = row.get(0)?;
+                let initial_strength: f64 = row.get(1)?;
+                let tau: f64 = row.get(2)?;
+                let tagged_at_str: String = row.get(3)?;
+                let prp_available: i32 = row.get(4)?;
+                let prp_available_at_str: Option<String> = row.get(5)?;
+
+                let tagged_at = DateTime::parse_from_rfc3339(&tagged_at_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now());
+
+                let prp_available_at = prp_available_at_str.and_then(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .ok()
+                });
+
+                Ok(SynapticTag {
+                    memory_id,
+                    initial_strength,
+                    tau,
+                    tagged_at,
+                    prp_available: prp_available != 0,
+                    prp_available_at,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Filter to only valid tags (strength above threshold)
+        Ok(tags
+            .into_iter()
+            .filter(|tag| tag.is_valid_with_threshold(validity_threshold))
+            .collect())
+    }
+
+    // =========================================================================
+    // Consolidation Phase Methods
+    // =========================================================================
+
+    /// Get the consolidation phase for a memory.
+    ///
+    /// Returns None if the memory doesn't exist.
+    pub fn get_consolidation_phase(&self, memory_id: &str) -> RookResult<Option<ConsolidationPhase>> {
+        let conn = self.conn.lock().map_err(|e| RookError::database(e.to_string()))?;
+
+        let result = conn
+            .query_row(
+                "SELECT consolidation_phase FROM fsrs_states WHERE memory_id = ?1",
+                params![memory_id],
+                |row| {
+                    let phase_str: String = row.get(0)?;
+                    Ok(phase_str)
+                },
+            )
+            .optional()?;
+
+        match result {
+            Some(phase_str) => {
+                let phase = ConsolidationPhase::from_str(&phase_str)
+                    .unwrap_or(ConsolidationPhase::Immediate);
+                Ok(Some(phase))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Update the consolidation phase for a memory.
+    ///
+    /// Returns true if the memory was updated, false if it doesn't exist.
+    pub fn update_consolidation_phase(
+        &self,
+        memory_id: &str,
+        phase: ConsolidationPhase,
+    ) -> RookResult<bool> {
+        let conn = self.conn.lock().map_err(|e| RookError::database(e.to_string()))?;
+
+        let updated = conn.execute(
+            "UPDATE fsrs_states SET consolidation_phase = ?1, updated_at = ?2 WHERE memory_id = ?3",
+            params![phase.to_string(), Utc::now().to_rfc3339(), memory_id],
+        )?;
+
+        Ok(updated > 0)
+    }
+
+    /// Get all memories in a specific consolidation phase.
+    pub fn get_memories_in_phase(&self, phase: ConsolidationPhase) -> RookResult<Vec<String>> {
+        let conn = self.conn.lock().map_err(|e| RookError::database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT memory_id FROM fsrs_states WHERE consolidation_phase = ?1",
+        )?;
+
+        let ids = stmt
+            .query_map(params![phase.to_string()], |row| row.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+
+        Ok(ids)
+    }
+
+    /// Get count of memories in each consolidation phase.
+    pub fn count_by_phase(&self) -> RookResult<std::collections::HashMap<ConsolidationPhase, usize>> {
+        let conn = self.conn.lock().map_err(|e| RookError::database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT consolidation_phase, COUNT(*) FROM fsrs_states GROUP BY consolidation_phase",
+        )?;
+
+        let mut counts = std::collections::HashMap::new();
+
+        let rows = stmt.query_map([], |row| {
+            let phase_str: String = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            Ok((phase_str, count))
+        })?;
+
+        for row in rows {
+            let (phase_str, count) = row?;
+            if let Ok(phase) = ConsolidationPhase::from_str(&phase_str) {
+                counts.insert(phase, count as usize);
+            }
+        }
+
+        Ok(counts)
     }
 }
 
@@ -498,5 +809,182 @@ mod tests {
 
         assert_eq!(store.count().unwrap(), 3);
         assert_eq!(store.count_key_memories().unwrap(), 2);
+    }
+
+    // =========================================================================
+    // Synaptic Tag Tests
+    // =========================================================================
+
+    #[test]
+    fn test_save_and_get_synaptic_tag() {
+        let store = CognitiveStore::in_memory().unwrap();
+
+        let tag = SynapticTag::new("mem1".to_string(), 0.8);
+        store.save_synaptic_tag(&tag).unwrap();
+
+        let retrieved = store.get_synaptic_tag("mem1").unwrap().unwrap();
+
+        assert_eq!(retrieved.memory_id, "mem1");
+        assert!((retrieved.initial_strength - 0.8).abs() < 0.001);
+        assert!((retrieved.tau - 60.0).abs() < 0.001);
+        assert!(!retrieved.prp_available);
+    }
+
+    #[test]
+    fn test_synaptic_tag_with_prp() {
+        let store = CognitiveStore::in_memory().unwrap();
+
+        let mut tag = SynapticTag::new("mem1".to_string(), 0.9);
+        tag.set_prp_available();
+        store.save_synaptic_tag(&tag).unwrap();
+
+        let retrieved = store.get_synaptic_tag("mem1").unwrap().unwrap();
+
+        assert!(retrieved.prp_available);
+        assert!(retrieved.prp_available_at.is_some());
+    }
+
+    #[test]
+    fn test_delete_synaptic_tag() {
+        let store = CognitiveStore::in_memory().unwrap();
+
+        let tag = SynapticTag::new("mem1".to_string(), 0.8);
+        store.save_synaptic_tag(&tag).unwrap();
+
+        assert!(store.delete_synaptic_tag("mem1").unwrap());
+        assert!(store.get_synaptic_tag("mem1").unwrap().is_none());
+
+        // Deleting non-existent returns false
+        assert!(!store.delete_synaptic_tag("nonexistent").unwrap());
+    }
+
+    #[test]
+    fn test_get_tags_in_time_range() {
+        let store = CognitiveStore::in_memory().unwrap();
+        let now = Utc::now();
+
+        // Create tags at different times
+        let tag1 = SynapticTag::with_timestamp("mem1".to_string(), 0.8, now - Duration::hours(2));
+        let tag2 = SynapticTag::with_timestamp("mem2".to_string(), 0.8, now - Duration::hours(1));
+        let tag3 = SynapticTag::with_timestamp("mem3".to_string(), 0.8, now);
+
+        store.save_synaptic_tag(&tag1).unwrap();
+        store.save_synaptic_tag(&tag2).unwrap();
+        store.save_synaptic_tag(&tag3).unwrap();
+
+        // Query for tags in the last 90 minutes
+        let start = now - Duration::minutes(90);
+        let end = now;
+        let tags = store.get_tags_in_time_range(start, end).unwrap();
+
+        // Should get mem2 and mem3 (mem1 is too old)
+        assert_eq!(tags.len(), 2);
+        // Results should be ordered by tagged_at descending
+        assert_eq!(tags[0].memory_id, "mem3");
+        assert_eq!(tags[1].memory_id, "mem2");
+    }
+
+    #[test]
+    fn test_get_tags_needing_prp() {
+        let store = CognitiveStore::in_memory().unwrap();
+        let now = Utc::now();
+
+        // Tag with PRP (shouldn't be returned)
+        let mut tag1 = SynapticTag::new("mem1".to_string(), 0.8);
+        tag1.set_prp_available();
+        store.save_synaptic_tag(&tag1).unwrap();
+
+        // Tag without PRP, still valid (should be returned)
+        let tag2 = SynapticTag::new("mem2".to_string(), 0.8);
+        store.save_synaptic_tag(&tag2).unwrap();
+
+        // Tag without PRP, but expired (shouldn't be returned)
+        let old_time = now - Duration::hours(4);
+        let tag3 = SynapticTag::with_timestamp("mem3".to_string(), 0.8, old_time);
+        store.save_synaptic_tag(&tag3).unwrap();
+
+        let tags = store.get_tags_needing_prp(0.1).unwrap();
+
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].memory_id, "mem2");
+    }
+
+    // =========================================================================
+    // Consolidation Phase Tests
+    // =========================================================================
+
+    #[test]
+    fn test_default_consolidation_phase() {
+        let store = CognitiveStore::in_memory().unwrap();
+
+        let state = create_test_state(10.0, 5);
+        store.save_state("mem1", &state, false, None).unwrap();
+
+        let phase = store.get_consolidation_phase("mem1").unwrap().unwrap();
+        assert_eq!(phase, ConsolidationPhase::Immediate);
+    }
+
+    #[test]
+    fn test_update_consolidation_phase() {
+        let store = CognitiveStore::in_memory().unwrap();
+
+        let state = create_test_state(10.0, 5);
+        store.save_state("mem1", &state, false, None).unwrap();
+
+        // Update to Early
+        assert!(store.update_consolidation_phase("mem1", ConsolidationPhase::Early).unwrap());
+
+        let phase = store.get_consolidation_phase("mem1").unwrap().unwrap();
+        assert_eq!(phase, ConsolidationPhase::Early);
+
+        // Update non-existent returns false
+        assert!(!store.update_consolidation_phase("nonexistent", ConsolidationPhase::Early).unwrap());
+    }
+
+    #[test]
+    fn test_get_memories_in_phase() {
+        let store = CognitiveStore::in_memory().unwrap();
+
+        let state = create_test_state(10.0, 5);
+        store.save_state("mem1", &state, false, None).unwrap();
+        store.save_state("mem2", &state, false, None).unwrap();
+        store.save_state("mem3", &state, false, None).unwrap();
+
+        // Update phases
+        store.update_consolidation_phase("mem1", ConsolidationPhase::Early).unwrap();
+        store.update_consolidation_phase("mem3", ConsolidationPhase::Early).unwrap();
+
+        let immediate = store.get_memories_in_phase(ConsolidationPhase::Immediate).unwrap();
+        let early = store.get_memories_in_phase(ConsolidationPhase::Early).unwrap();
+
+        assert_eq!(immediate.len(), 1);
+        assert_eq!(immediate[0], "mem2");
+
+        assert_eq!(early.len(), 2);
+        assert!(early.contains(&"mem1".to_string()));
+        assert!(early.contains(&"mem3".to_string()));
+    }
+
+    #[test]
+    fn test_count_by_phase() {
+        let store = CognitiveStore::in_memory().unwrap();
+
+        let state = create_test_state(10.0, 5);
+        store.save_state("mem1", &state, false, None).unwrap();
+        store.save_state("mem2", &state, false, None).unwrap();
+        store.save_state("mem3", &state, false, None).unwrap();
+        store.save_state("mem4", &state, false, None).unwrap();
+
+        // Update phases
+        store.update_consolidation_phase("mem1", ConsolidationPhase::Early).unwrap();
+        store.update_consolidation_phase("mem2", ConsolidationPhase::Early).unwrap();
+        store.update_consolidation_phase("mem3", ConsolidationPhase::Consolidated).unwrap();
+
+        let counts = store.count_by_phase().unwrap();
+
+        assert_eq!(counts.get(&ConsolidationPhase::Immediate), Some(&1));
+        assert_eq!(counts.get(&ConsolidationPhase::Early), Some(&2));
+        assert_eq!(counts.get(&ConsolidationPhase::Consolidated), Some(&1));
+        assert_eq!(counts.get(&ConsolidationPhase::Late), None); // No memories in Late
     }
 }
