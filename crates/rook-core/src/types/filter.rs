@@ -101,6 +101,54 @@ impl FilterCondition {
             operator: FilterOperator::In(values),
         }
     }
+
+    /// Create a less than filter.
+    pub fn lt(field: impl Into<String>, value: impl Into<serde_json::Value>) -> Self {
+        Self {
+            field: field.into(),
+            operator: FilterOperator::Lt(value.into()),
+        }
+    }
+
+    /// Create a less than or equal filter.
+    pub fn lte(field: impl Into<String>, value: impl Into<serde_json::Value>) -> Self {
+        Self {
+            field: field.into(),
+            operator: FilterOperator::Lte(value.into()),
+        }
+    }
+
+    /// Create a case-insensitive contains filter.
+    pub fn icontains(field: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            operator: FilterOperator::Icontains(value.into()),
+        }
+    }
+
+    /// Create an is null filter.
+    pub fn is_null(field: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            operator: FilterOperator::IsNull,
+        }
+    }
+
+    /// Create an is not null filter.
+    pub fn is_not_null(field: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            operator: FilterOperator::IsNotNull,
+        }
+    }
+
+    /// Create an exists filter.
+    pub fn exists(field: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            operator: FilterOperator::Exists,
+        }
+    }
 }
 
 /// Composite filter with AND/OR/NOT logic.
@@ -160,6 +208,51 @@ impl Filter {
     /// Create an in-list filter.
     pub fn in_list(field: impl Into<String>, values: Vec<serde_json::Value>) -> Self {
         Filter::Condition(FilterCondition::in_list(field, values))
+    }
+
+    /// Create an inequality filter.
+    pub fn ne(field: impl Into<String>, value: impl Into<serde_json::Value>) -> Self {
+        Filter::Condition(FilterCondition::ne(field, value))
+    }
+
+    /// Create a greater than filter.
+    pub fn gt(field: impl Into<String>, value: impl Into<serde_json::Value>) -> Self {
+        Filter::Condition(FilterCondition::gt(field, value))
+    }
+
+    /// Create a greater than or equal filter.
+    pub fn gte(field: impl Into<String>, value: impl Into<serde_json::Value>) -> Self {
+        Filter::Condition(FilterCondition::gte(field, value))
+    }
+
+    /// Create a less than filter.
+    pub fn lt(field: impl Into<String>, value: impl Into<serde_json::Value>) -> Self {
+        Filter::Condition(FilterCondition::lt(field, value))
+    }
+
+    /// Create a less than or equal filter.
+    pub fn lte(field: impl Into<String>, value: impl Into<serde_json::Value>) -> Self {
+        Filter::Condition(FilterCondition::lte(field, value))
+    }
+
+    /// Create a case-insensitive contains filter.
+    pub fn icontains(field: impl Into<String>, value: impl Into<String>) -> Self {
+        Filter::Condition(FilterCondition::icontains(field, value))
+    }
+
+    /// Create an is null filter.
+    pub fn is_null(field: impl Into<String>) -> Self {
+        Filter::Condition(FilterCondition::is_null(field))
+    }
+
+    /// Create an is not null filter.
+    pub fn is_not_null(field: impl Into<String>) -> Self {
+        Filter::Condition(FilterCondition::is_not_null(field))
+    }
+
+    /// Create an exists filter.
+    pub fn exists(field: impl Into<String>) -> Self {
+        Filter::Condition(FilterCondition::exists(field))
     }
 }
 
