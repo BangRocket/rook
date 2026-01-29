@@ -863,12 +863,26 @@ impl Memory {
         let hash = format!("{:x}", md5::compute(data.as_bytes()));
         let created_at = chrono::Utc::now().to_rfc3339();
 
+        // Classify the memory using LLM
+        let classification = self.classify_memory(data).await?;
+
         let mut payload = metadata.clone();
         payload.insert("data".to_string(), serde_json::Value::String(data.to_string()));
         payload.insert("hash".to_string(), serde_json::Value::String(hash));
         payload.insert(
             "created_at".to_string(),
             serde_json::Value::String(created_at.clone()),
+        );
+
+        // Store classification results in payload
+        payload.insert(
+            "category".to_string(),
+            serde_json::Value::String(classification.category),
+        );
+        payload.insert("is_key".to_string(), serde_json::Value::Bool(classification.is_key));
+        payload.insert(
+            "classification_confidence".to_string(),
+            serde_json::json!(classification.confidence),
         );
 
         let record = VectorRecord::new(memory_id.clone(), embedding, payload.clone());
