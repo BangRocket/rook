@@ -232,4 +232,6 @@ pub enum VectorStoreProvider {
     Baidu,
     Valkey,
     AzureMysql,
+    /// SQLite with sqlite-vec extension for embedded vector search.
+    SqliteVec,
 }

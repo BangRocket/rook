@@ -143,6 +143,21 @@ impl VectorStoreFactory {
                 Ok(Arc::new(store))
             }
 
+            #[cfg(feature = "sqlite-vec")]
+            VectorStoreProvider::SqliteVec => {
+                let db_path = config
+                    .config
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(":memory:");
+                let store = crate::sqlite_vec::SqliteVecStore::new(
+                    db_path,
+                    &config.collection_name,
+                    config.embedding_model_dims,
+                )?;
+                Ok(Arc::new(store))
+            }
+
             #[allow(unreachable_patterns)]
             _ => Err(RookError::UnsupportedProvider {
                 provider: format!("{:?}", provider),
@@ -241,5 +256,35 @@ impl VectorStoreFactory {
             }),
         };
         Self::create(VectorStoreProvider::Chroma, config).await
+    }
+
+    /// Create an in-memory sqlite-vec vector store.
+    ///
+    /// This is ideal for testing and development. For persistence,
+    /// use `sqlite_vec_with_path` instead.
+    #[cfg(feature = "sqlite-vec")]
+    pub fn sqlite_vec_memory(
+        collection_name: &str,
+        dimension: usize,
+    ) -> RookResult<Arc<dyn VectorStore>> {
+        let store = crate::sqlite_vec::SqliteVecStore::new(":memory:", collection_name, dimension)?;
+        Ok(Arc::new(store))
+    }
+
+    /// Create a persistent sqlite-vec vector store.
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_name` - Name of the collection
+    /// * `db_path` - Path to SQLite database file
+    /// * `dimension` - Vector dimension
+    #[cfg(feature = "sqlite-vec")]
+    pub fn sqlite_vec_with_path(
+        collection_name: &str,
+        db_path: &str,
+        dimension: usize,
+    ) -> RookResult<Arc<dyn VectorStore>> {
+        let store = crate::sqlite_vec::SqliteVecStore::new(db_path, collection_name, dimension)?;
+        Ok(Arc::new(store))
     }
 }

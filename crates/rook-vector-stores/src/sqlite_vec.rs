@@ -418,7 +418,10 @@ impl VectorStore for SqliteVecStore {
             None => existing.payload,
         };
 
-        // Re-insert (upsert).
+        // Delete old record first (vec0 doesn't support INSERT OR REPLACE well).
+        self.delete(id).await?;
+
+        // Insert updated record.
         let record = VectorRecord {
             id: id.to_string(),
             vector: new_vector,
