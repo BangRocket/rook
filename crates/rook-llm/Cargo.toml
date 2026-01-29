@@ -1,0 +1,46 @@
+[package]
+name = "rook-llm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "LLM provider implementations for rook"
+
+[dependencies]
+rook-core = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Utilities
+secrecy = { workspace = true }
+url = { workspace = true }
+
+# LLM clients (optional)
+async-openai = { version = "0.24", optional = true }
+ollama-rs = { version = "0.2", optional = true }
+
+[features]
+default = ["openai"]
+full = ["openai", "anthropic", "ollama"]
+openai = ["dep:async-openai"]
+anthropic = []
+ollama = ["dep:ollama-rs"]
+
+[dev-dependencies]
+tokio-test = { workspace = true }

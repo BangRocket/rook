@@ -1,0 +1,119 @@
+[package]
+name = "rook-vector-stores"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Vector store implementations for rook"
+
+[dependencies]
+rook-core = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# UUID
+uuid = { workspace = true }
+
+# Date/time
+chrono = { workspace = true }
+
+# URL parsing
+url = "2.5"
+
+# Vector store clients (optional)
+qdrant-client = { version = "1.7", optional = true }
+redis = { version = "0.24", features = ["tokio-comp", "json"], optional = true }
+elasticsearch = { version = "8.5.0-alpha.1", optional = true }
+opensearch = { version = "2.2", optional = true }
+mongodb = { version = "2.8", optional = true }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "mysql", "sqlite"], optional = true }
+pgvector = { version = "0.4", features = ["sqlx"], optional = true }
+aws-sdk-s3 = { version = "1.15", optional = true }
+aws-config = { version = "1.1", optional = true }
+tonic = { version = "0.10", optional = true }
+prost = { version = "0.12", optional = true }
+scylla = { version = "0.12", optional = true }
+base64 = { version = "0.21", optional = true }
+
+[features]
+default = ["qdrant"]
+full = [
+    "qdrant",
+    "redis",
+    "elasticsearch",
+    "opensearch",
+    "mongodb",
+    "pgvector",
+    "mysql",
+    "sqlite",
+    "pinecone",
+    "weaviate",
+    "chroma",
+    "milvus",
+    "upstash",
+    "azure-ai-search",
+    "vertex-ai",
+    "supabase",
+    "lancedb",
+    "duckdb",
+    "cassandra",
+    "valkey",
+    "s3-vectors",
+    "neptune",
+    "databricks",
+    "faiss",
+]
+
+# Native Rust crate backends
+qdrant = ["dep:qdrant-client"]
+redis = ["dep:redis"]
+elasticsearch = ["dep:elasticsearch"]
+opensearch = ["dep:opensearch"]
+mongodb = ["dep:mongodb"]
+
+# SQL-based backends
+pgvector = ["dep:sqlx", "dep:pgvector"]
+mysql = ["dep:sqlx"]
+sqlite = ["dep:sqlx"]
+
+# REST API backends
+pinecone = ["dep:base64"]
+weaviate = []
+chroma = []
+milvus = ["dep:tonic", "dep:prost"]
+upstash = []
+
+# Cloud backends
+azure-ai-search = []
+vertex-ai = []
+supabase = ["dep:sqlx", "dep:pgvector"]
+
+# Embedded/local backends
+lancedb = []
+duckdb = []
+
+# Other backends
+cassandra = ["dep:scylla"]
+valkey = ["dep:redis"]
+s3-vectors = ["dep:aws-sdk-s3", "dep:aws-config"]
+neptune = ["dep:aws-sdk-s3", "dep:aws-config"]
+databricks = []
+faiss = []
+
+[dev-dependencies]
+tokio-test = { workspace = true }

@@ -1,0 +1,54 @@
+[package]
+name = "rook-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "REST API server for rook"
+
+[[bin]]
+name = "rook-server"
+path = "src/main.rs"
+
+[dependencies]
+rook-core = { workspace = true }
+rook-llm = { workspace = true }
+rook-embeddings = { workspace = true }
+rook-vector-stores = { workspace = true }
+rook-graph-stores = { workspace = true }
+rook-rerankers = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["full"] }
+async-trait = { workspace = true }
+
+# Web framework
+axum = { version = "0.7", features = ["macros", "json"] }
+tower = { version = "0.4", features = ["timeout", "limit"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# HTTP client (for proxying if needed)
+reqwest = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# UUID
+uuid = { workspace = true }
+
+# Date/time
+chrono = { workspace = true }
+
+# Config
+dotenvy = "0.15"
+
+[dev-dependencies]
+tokio-test = { workspace = true }

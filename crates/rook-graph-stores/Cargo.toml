@@ -1,0 +1,41 @@
+[package]
+name = "rook-graph-stores"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Graph store implementations for rook"
+
+[dependencies]
+rook-core = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Graph database clients (optional)
+neo4rs = { version = "0.7", optional = true }
+
+[features]
+default = ["neo4j"]
+full = ["neo4j", "memgraph", "kuzu", "neptune"]
+neo4j = ["dep:neo4rs"]
+memgraph = ["dep:neo4rs"]  # Memgraph is Neo4j-compatible
+kuzu = []
+neptune = []
+
+[dev-dependencies]
+tokio-test = { workspace = true }
