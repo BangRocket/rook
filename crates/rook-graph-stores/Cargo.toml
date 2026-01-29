@@ -29,13 +29,21 @@ tracing = { workspace = true }
 # Graph database clients (optional)
 neo4rs = { version = "0.7", optional = true }
 
+# Embedded graph store dependencies
+petgraph = { version = "0.6", features = ["serde-1"], optional = true }
+rusqlite = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
+
 [features]
-default = ["neo4j"]
-full = ["neo4j", "memgraph", "kuzu", "neptune"]
+default = ["embedded"]
+full = ["neo4j", "memgraph", "kuzu", "neptune", "embedded"]
 neo4j = ["dep:neo4rs"]
 memgraph = ["dep:neo4rs"]  # Memgraph is Neo4j-compatible
 kuzu = []
 neptune = []
+embedded = ["dep:petgraph", "dep:rusqlite", "dep:chrono", "dep:uuid"]
 
 [dev-dependencies]
 tokio-test = { workspace = true }
+tempfile = "3.10"
