@@ -49,8 +49,9 @@ pub use embedded::EmbeddedGraphStore;
 
 #[cfg(feature = "embedded")]
 pub use entity::{
-    EntityExtractor, EntityMerger, EntityType, ExtractedEntity, ExtractedRelationship,
-    ExtractionResult, MergeConfig, MergeResult, RelationshipType,
+    cosine_similarity, EntityExtractor, EntityMerger, EntityType, ExistingEntity,
+    ExtractedEntity, ExtractedRelationship, ExtractionResult, MergeConfig, MergeResult,
+    RelationshipType,
 };
 
 #[cfg(feature = "neo4j")]

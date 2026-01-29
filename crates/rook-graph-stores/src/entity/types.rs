@@ -26,6 +26,8 @@ pub enum EntityType {
     Concept,
     /// An event (e.g., "meeting", "conference", "birthday").
     Event,
+    /// A memory category node for classification grouping.
+    Category,
 }
 
 impl EntityType {
@@ -60,6 +62,10 @@ impl EntityType {
             "event" | "evt" | "meeting" | "conference" | "occasion"
             | "happening" | "occurrence" | "activity" => Some(Self::Event),
 
+            // Category variants
+            "category" | "cat" | "classification" | "group" | "type" | "class"
+            | "taxonomy" | "tag" => Some(Self::Category),
+
             _ => None,
         }
     }
@@ -73,6 +79,7 @@ impl EntityType {
             Self::Project,
             Self::Concept,
             Self::Event,
+            Self::Category,
         ]
     }
 
@@ -85,6 +92,7 @@ impl EntityType {
             Self::Project => "project",
             Self::Concept => "concept",
             Self::Event => "event",
+            Self::Category => "category",
         }
     }
 }
@@ -127,6 +135,10 @@ pub enum RelationshipType {
     ParticipatedIn,
     /// Entity was mentioned in context.
     MentionedIn,
+    /// Memory belongs to a category.
+    BelongsToCategory,
+    /// Category is a subcategory of another.
+    SubcategoryOf,
 }
 
 impl RelationshipType {
@@ -174,6 +186,14 @@ impl RelationshipType {
             "mentioned_in" | "mentionedin" | "referenced_in" | "cited_in"
             | "appears_in" | "discussed_in" | "noted_in" => Some(Self::MentionedIn),
 
+            // BelongsToCategory variants
+            "belongs_to_category" | "in_category" | "categorized_as" | "classified_as"
+            | "tagged_as" | "has_category" => Some(Self::BelongsToCategory),
+
+            // SubcategoryOf variants
+            "subcategory_of" | "child_of" | "parent_category" | "under_category"
+            | "sub_category" | "nested_in" => Some(Self::SubcategoryOf),
+
             _ => None,
         }
     }
@@ -190,6 +210,8 @@ impl RelationshipType {
             Self::CreatedBy,
             Self::ParticipatedIn,
             Self::MentionedIn,
+            Self::BelongsToCategory,
+            Self::SubcategoryOf,
         ]
     }
 
@@ -205,6 +227,8 @@ impl RelationshipType {
             Self::CreatedBy => "created_by",
             Self::ParticipatedIn => "participated_in",
             Self::MentionedIn => "mentioned_in",
+            Self::BelongsToCategory => "belongs_to_category",
+            Self::SubcategoryOf => "subcategory_of",
         }
     }
 
@@ -220,6 +244,8 @@ impl RelationshipType {
             Self::CreatedBy => "Entity was created by person/organization",
             Self::ParticipatedIn => "Person participated in event",
             Self::MentionedIn => "Entity was mentioned in context",
+            Self::BelongsToCategory => "Memory belongs to a category",
+            Self::SubcategoryOf => "Category is a subcategory of another",
         }
     }
 }
@@ -317,17 +343,20 @@ mod tests {
     #[test]
     fn test_entity_type_all() {
         let all = EntityType::all();
-        assert_eq!(all.len(), 6);
+        assert_eq!(all.len(), 7);
         assert!(all.contains(&EntityType::Person));
         assert!(all.contains(&EntityType::Event));
+        assert!(all.contains(&EntityType::Category));
     }
 
     #[test]
     fn test_relationship_type_all() {
         let all = RelationshipType::all();
-        assert_eq!(all.len(), 9);
+        assert_eq!(all.len(), 11);
         assert!(all.contains(&RelationshipType::Knows));
         assert!(all.contains(&RelationshipType::MentionedIn));
+        assert!(all.contains(&RelationshipType::BelongsToCategory));
+        assert!(all.contains(&RelationshipType::SubcategoryOf));
     }
 
     #[test]

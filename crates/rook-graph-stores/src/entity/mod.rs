@@ -31,4 +31,4 @@ mod merger;
 
 pub use types::{EntityType, RelationshipType};
 pub use extractor::{EntityExtractor, ExtractedEntity, ExtractedRelationship, ExtractionResult};
-pub use merger::{EntityMerger, MergeConfig, MergeResult};
+pub use merger::{cosine_similarity, EntityMerger, ExistingEntity, MergeConfig, MergeResult};
