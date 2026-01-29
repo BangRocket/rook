@@ -26,7 +26,7 @@ pub mod traits;
 pub mod types;
 
 // Re-export commonly used types
-pub use cognitive::FsrsScheduler;
+pub use cognitive::{ArchivalCandidate, CognitiveStore, FsrsScheduler};
 pub use config::MemoryConfig;
 pub use error::{RookError, RookResult};
 pub use memory::Memory;
