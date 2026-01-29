@@ -18,6 +18,7 @@
 //! let results = memory.search("food preferences", Some("user1".to_string()), None, None, 10, None, None, true).await?;
 //! ```
 
+pub mod cognitive;
 pub mod config;
 pub mod error;
 pub mod memory;
@@ -25,6 +26,7 @@ pub mod traits;
 pub mod types;
 
 // Re-export commonly used types
+pub use cognitive::FsrsScheduler;
 pub use config::MemoryConfig;
 pub use error::{RookError, RookResult};
 pub use memory::Memory;
@@ -33,6 +35,6 @@ pub use traits::{
     VectorStoreConfig,
 };
 pub use types::{
-    AddResult, Filter, MemoryEvent, MemoryItem, MemoryResult, MemoryType, Message, MessageInput,
-    MessageRole, SearchResult,
+    AddResult, DualStrength, Filter, FsrsState, Grade, MemoryEvent, MemoryItem, MemoryResult,
+    MemoryType, Message, MessageInput, MessageRole, SearchResult,
 };
