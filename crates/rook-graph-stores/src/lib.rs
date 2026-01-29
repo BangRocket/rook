@@ -24,6 +24,9 @@ mod factory;
 #[cfg(feature = "embedded")]
 pub mod embedded;
 
+#[cfg(feature = "embedded")]
+pub mod entity;
+
 #[cfg(feature = "neo4j")]
 mod neo4j;
 
@@ -40,6 +43,12 @@ pub use factory::GraphStoreFactory;
 
 #[cfg(feature = "embedded")]
 pub use embedded::EmbeddedGraphStore;
+
+#[cfg(feature = "embedded")]
+pub use entity::{
+    EntityExtractor, EntityMerger, EntityType, ExtractedEntity, ExtractedRelationship,
+    ExtractionResult, MergeConfig, MergeResult, RelationshipType,
+};
 
 #[cfg(feature = "neo4j")]
 pub use neo4j::Neo4jGraphStore;
