@@ -6,7 +6,7 @@
 //! Also provides storage for synaptic tags and consolidation phases
 //! for the STC (Synaptic Tagging and Capture) memory consolidation model.
 
-use crate::consolidation::{ConsolidationPhase, SynapticTag};
+use crate::consolidation::{BehavioralTagger, ConsolidationPhase, NoveltyResult, SynapticTag};
 use crate::error::{RookError, RookResult};
 use crate::types::{ArchivalConfig, FsrsState};
 use chrono::{DateTime, Utc};
@@ -88,6 +88,40 @@ impl CognitiveStore {
             CREATE INDEX IF NOT EXISTS idx_synaptic_tags_prp_available ON synaptic_tags(prp_available);
             ",
         )?;
+
+        // Add dual_strength columns for consolidation (CON-07)
+        // These are added via ALTER TABLE to support existing databases
+        let has_storage: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('fsrs_states') WHERE name = 'storage_strength'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+
+        if !has_storage {
+            conn.execute(
+                "ALTER TABLE fsrs_states ADD COLUMN storage_strength REAL DEFAULT 0.5",
+                [],
+            )?;
+        }
+
+        let has_retrieval: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('fsrs_states') WHERE name = 'retrieval_strength'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+
+        if !has_retrieval {
+            conn.execute(
+                "ALTER TABLE fsrs_states ADD COLUMN retrieval_strength REAL DEFAULT 1.0",
+                [],
+            )?;
+        }
 
         Ok(())
     }
@@ -578,6 +612,116 @@ impl CognitiveStore {
         }
 
         Ok(counts)
+    }
+
+    // =========================================================================
+    // Behavioral Tagging Integration
+    // =========================================================================
+
+    /// Process a novel event and boost nearby memories' tags.
+    ///
+    /// This combines:
+    /// 1. Querying tags in the behavioral window from the database
+    /// 2. Applying PRP boost to valid tags
+    /// 3. Saving updated tags back to database
+    ///
+    /// Returns the NoveltyResult indicating what happened.
+    pub fn process_novelty_boost(
+        &self,
+        tagger: &BehavioralTagger,
+        encoding_surprise: f32,
+        novel_event_time: DateTime<Utc>,
+        novel_memory_id: &str,
+    ) -> RookResult<NoveltyResult> {
+        // Check if this is actually a novel event
+        if !tagger.is_novel_event(encoding_surprise) {
+            return Ok(NoveltyResult::NotNovel {
+                encoding_surprise,
+                threshold: tagger.config().novelty_threshold,
+            });
+        }
+
+        // Get the time window
+        let (window_start, window_end) = tagger.get_tagging_window(novel_event_time);
+
+        // Query tags in the window from database
+        let mut tags = self.get_tags_in_time_range(window_start, window_end)?;
+
+        if tags.is_empty() {
+            return Ok(NoveltyResult::NoValidTags);
+        }
+
+        // Apply PRP boost
+        let boosted_ids = tagger.apply_prp_boost(&mut tags, novel_event_time, Some(novel_memory_id));
+
+        if boosted_ids.is_empty() {
+            return Ok(NoveltyResult::NoValidTags);
+        }
+
+        // Save updated tags back to database
+        for tag in tags.iter() {
+            if boosted_ids.contains(&tag.memory_id) {
+                self.save_synaptic_tag(tag)?;
+            }
+        }
+
+        Ok(NoveltyResult::Boosted {
+            count: boosted_ids.len(),
+            boosted_ids,
+        })
+    }
+
+    /// Get memories with valid tags (for consolidation processing).
+    ///
+    /// Returns (memory_id, SynapticTag) pairs for memories with tags
+    /// that are still valid (above threshold).
+    pub fn get_memories_with_valid_tags(
+        &self,
+        threshold: f32,
+        now: DateTime<Utc>,
+    ) -> RookResult<Vec<(String, SynapticTag)>> {
+        let conn = self.conn.lock().map_err(|e| RookError::database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT memory_id, initial_strength, tau, tagged_at, prp_available, prp_available_at
+             FROM synaptic_tags",
+        )?;
+
+        let results: Vec<(String, SynapticTag)> = stmt
+            .query_map([], |row| {
+                let memory_id: String = row.get(0)?;
+                let initial_strength: f64 = row.get(1)?;
+                let tau: f64 = row.get(2)?;
+                let tagged_at_str: String = row.get(3)?;
+                let prp_available: i32 = row.get(4)?;
+                let prp_available_at_str: Option<String> = row.get(5)?;
+
+                let tagged_at = DateTime::parse_from_rfc3339(&tagged_at_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now());
+
+                let prp_available_at = prp_available_at_str.and_then(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .ok()
+                });
+
+                let tag = SynapticTag {
+                    memory_id: memory_id.clone(),
+                    initial_strength,
+                    tau,
+                    tagged_at,
+                    prp_available: prp_available != 0,
+                    prp_available_at,
+                };
+
+                Ok((memory_id, tag))
+            })?
+            .filter_map(|r| r.ok())
+            .filter(|(_, tag)| tag.is_valid_at(now, threshold))
+            .collect();
+
+        Ok(results)
     }
 }
 
