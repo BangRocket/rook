@@ -25,6 +25,9 @@ mod factory;
 pub mod activation;
 
 #[cfg(feature = "embedded")]
+pub mod category;
+
+#[cfg(feature = "embedded")]
 pub mod embedded;
 
 #[cfg(feature = "embedded")]

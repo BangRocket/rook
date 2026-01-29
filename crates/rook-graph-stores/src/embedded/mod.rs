@@ -261,6 +261,212 @@ impl EmbeddedGraphStore {
         let graph = self.graph.lock().map_err(|e| RookError::internal(e.to_string()))?;
         Ok(graph.edge_count())
     }
+
+    // ==================== Category Operations ====================
+
+    /// Add a category node to the graph.
+    ///
+    /// Categories are stored as entities with entity_type="category".
+    pub fn add_category(
+        &self,
+        category: &crate::category::CategoryNode,
+        filters: &GraphFilters,
+    ) -> RookResult<i64> {
+        let properties = serde_json::json!({
+            "description": category.description,
+            "is_system": category.is_system,
+            "parent_category": category.parent_category,
+        });
+
+        let entity_id = self.add_entity(&category.name, "category", &properties, filters)?;
+
+        // If this category has a parent, create the subcategory_of relationship
+        if let Some(ref parent) = category.parent_category {
+            // Ensure parent exists
+            let parent_id = self.get_or_create_entity(parent, "category", filters)?;
+
+            let conn = self.conn.lock().map_err(|e| RookError::internal(e.to_string()))?;
+            let _ = sync::save_relationship(&conn, entity_id, parent_id, "subcategory_of", &serde_json::json!({}), 1.0)?;
+
+            // Update in-memory graph
+            let mut graph = self.graph.lock().map_err(|e| RookError::internal(e.to_string()))?;
+            let db_id_index = self.db_id_index.lock().map_err(|e| RookError::internal(e.to_string()))?;
+
+            if let (Some(&source_idx), Some(&target_idx)) =
+                (db_id_index.get(&entity_id), db_id_index.get(&parent_id))
+            {
+                let edge = RelationshipEdge::new(0, "subcategory_of");
+                graph.add_edge(source_idx, target_idx, edge);
+            }
+        }
+
+        Ok(entity_id)
+    }
+
+    /// Link a memory to a category.
+    ///
+    /// Creates a "belongs_to_category" relationship from memory to category.
+    pub fn link_memory_to_category(
+        &self,
+        memory_id: &str,
+        category_name: &str,
+        filters: &GraphFilters,
+    ) -> RookResult<()> {
+        // Create a memory entity if it doesn't exist
+        let memory_entity_name = format!("memory:{}", memory_id);
+        let memory_entity_id = self.get_or_create_entity(&memory_entity_name, "memory", filters)?;
+
+        // Ensure category exists
+        let category_id = self.get_or_create_entity(category_name, "category", filters)?;
+
+        // Create relationship
+        let conn = self.conn.lock().map_err(|e| RookError::internal(e.to_string()))?;
+        let rel_id = sync::save_relationship(&conn, memory_entity_id, category_id, "belongs_to_category", &serde_json::json!({}), 1.0)?;
+
+        // Also link in memory_entities table for fast lookup
+        sync::link_memory_to_entity(&conn, memory_id, category_id, "category")?;
+
+        // Update in-memory graph
+        let mut graph = self.graph.lock().map_err(|e| RookError::internal(e.to_string()))?;
+        let db_id_index = self.db_id_index.lock().map_err(|e| RookError::internal(e.to_string()))?;
+
+        if let (Some(&source_idx), Some(&target_idx)) =
+            (db_id_index.get(&memory_entity_id), db_id_index.get(&category_id))
+        {
+            let edge = RelationshipEdge::new(rel_id, "belongs_to_category");
+            graph.add_edge(source_idx, target_idx, edge);
+        }
+
+        Ok(())
+    }
+
+    /// Get all memory IDs in a category.
+    ///
+    /// Returns memory IDs (without the "memory:" prefix) that belong to the given category.
+    pub fn get_memories_in_category(
+        &self,
+        category_name: &str,
+        filters: &GraphFilters,
+    ) -> RookResult<Vec<String>> {
+        // Get category entity ID
+        let name_key = format!(
+            "{}:{}:{}:{}",
+            category_name,
+            filters.user_id.as_deref().unwrap_or(""),
+            filters.agent_id.as_deref().unwrap_or(""),
+            filters.run_id.as_deref().unwrap_or("")
+        );
+
+        let name_index = self.name_index.lock().map_err(|e| RookError::internal(e.to_string()))?;
+        let graph = self.graph.lock().map_err(|e| RookError::internal(e.to_string()))?;
+
+        let category_idx = match name_index.get(&name_key) {
+            Some(&idx) => idx,
+            None => return Ok(vec![]),
+        };
+
+        let mut memory_ids = Vec::new();
+
+        // Find all incoming "belongs_to_category" edges
+        for edge in graph.edges_directed(category_idx, petgraph::Direction::Incoming) {
+            if edge.weight().relationship_type == "belongs_to_category" {
+                if let Some(source_node) = graph.node_weight(edge.source()) {
+                    // Extract memory ID from "memory:{id}" format
+                    if source_node.name.starts_with("memory:") {
+                        let memory_id = source_node.name.strip_prefix("memory:").unwrap_or(&source_node.name);
+                        memory_ids.push(memory_id.to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(memory_ids)
+    }
+
+    /// Get all categories that a memory belongs to.
+    pub fn get_categories_for_memory(
+        &self,
+        memory_id: &str,
+        filters: &GraphFilters,
+    ) -> RookResult<Vec<String>> {
+        let memory_entity_name = format!("memory:{}", memory_id);
+        let name_key = format!(
+            "{}:{}:{}:{}",
+            memory_entity_name,
+            filters.user_id.as_deref().unwrap_or(""),
+            filters.agent_id.as_deref().unwrap_or(""),
+            filters.run_id.as_deref().unwrap_or("")
+        );
+
+        let name_index = self.name_index.lock().map_err(|e| RookError::internal(e.to_string()))?;
+        let graph = self.graph.lock().map_err(|e| RookError::internal(e.to_string()))?;
+
+        let memory_idx = match name_index.get(&name_key) {
+            Some(&idx) => idx,
+            None => return Ok(vec![]),
+        };
+
+        let mut categories = Vec::new();
+
+        // Find all outgoing "belongs_to_category" edges
+        for edge in graph.edges(memory_idx) {
+            if edge.weight().relationship_type == "belongs_to_category" {
+                if let Some(target_node) = graph.node_weight(edge.target()) {
+                    if target_node.entity_type == "category" {
+                        categories.push(target_node.name.clone());
+                    }
+                }
+            }
+        }
+
+        Ok(categories)
+    }
+
+    /// Initialize default categories in the graph.
+    ///
+    /// Creates category nodes for all default categories if they don't exist.
+    /// Safe to call multiple times (idempotent).
+    pub fn initialize_default_categories(&self, filters: &GraphFilters) -> RookResult<()> {
+        let default_categories = crate::category::default_categories();
+
+        for category in default_categories {
+            // add_entity handles upsert internally
+            self.add_category(&category, filters)?;
+        }
+
+        Ok(())
+    }
+
+    /// Get all category names in the graph.
+    pub fn get_all_categories(&self, filters: &GraphFilters) -> RookResult<Vec<String>> {
+        let graph = self.graph.lock().map_err(|e| RookError::internal(e.to_string()))?;
+        let mut categories = Vec::new();
+
+        for node_idx in graph.node_indices() {
+            let node = match graph.node_weight(node_idx) {
+                Some(n) => n,
+                None => continue,
+            };
+
+            // Check if it's a category
+            if node.entity_type != "category" {
+                continue;
+            }
+
+            // Check filters
+            if !node.matches_filters(
+                filters.user_id.as_deref(),
+                filters.agent_id.as_deref(),
+                filters.run_id.as_deref(),
+            ) {
+                continue;
+            }
+
+            categories.push(node.name.clone());
+        }
+
+        Ok(categories)
+    }
 }
 
 #[async_trait]
@@ -614,5 +820,144 @@ mod tests {
         let user2_entities = store.get_all(&user2).await.unwrap();
         assert_eq!(user2_entities.len(), 1);
         assert_eq!(user2_entities[0].properties["owner"], "user2");
+    }
+
+    // ==================== Category Tests ====================
+
+    #[tokio::test]
+    async fn test_add_category() {
+        use crate::category::CategoryNode;
+
+        let store = EmbeddedGraphStore::in_memory().unwrap();
+        let filters = GraphFilters::default();
+
+        let category = CategoryNode::system("professional", "Work-related memories");
+        store.add_category(&category, &filters).unwrap();
+
+        // Category should be stored as an entity
+        let entities = store.get_all(&filters).await.unwrap();
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].name, "professional");
+        assert_eq!(entities[0].entity_type, "category");
+        assert_eq!(entities[0].properties["is_system"], true);
+    }
+
+    #[tokio::test]
+    async fn test_add_category_with_hierarchy() {
+        use crate::category::CategoryNode;
+
+        let store = EmbeddedGraphStore::in_memory().unwrap();
+        let filters = GraphFilters::default();
+
+        // Create parent category
+        let parent = CategoryNode::system("professional", "Work-related");
+        store.add_category(&parent, &filters).unwrap();
+
+        // Create child category
+        let child = CategoryNode::new("work_projects", "Active projects")
+            .with_parent("professional");
+        store.add_category(&child, &filters).unwrap();
+
+        // Should have relationship
+        let neighbors = store.get_neighbors("work_projects", &filters).unwrap();
+        assert_eq!(neighbors.len(), 1);
+        assert_eq!(neighbors[0].relationship, "subcategory_of");
+        assert_eq!(neighbors[0].target, "professional");
+    }
+
+    #[tokio::test]
+    async fn test_link_memory_to_category() {
+        let store = EmbeddedGraphStore::in_memory().unwrap();
+        let filters = GraphFilters::default();
+
+        // Create a category
+        store.add_entity("professional", "category", &serde_json::json!({}), &filters).unwrap();
+
+        // Link a memory to the category
+        store.link_memory_to_category("mem-123", "professional", &filters).unwrap();
+
+        // Get memories in category
+        let memories = store.get_memories_in_category("professional", &filters).unwrap();
+        assert_eq!(memories.len(), 1);
+        assert_eq!(memories[0], "mem-123");
+    }
+
+    #[tokio::test]
+    async fn test_get_categories_for_memory() {
+        let store = EmbeddedGraphStore::in_memory().unwrap();
+        let filters = GraphFilters::default();
+
+        // Create categories
+        store.add_entity("professional", "category", &serde_json::json!({}), &filters).unwrap();
+        store.add_entity("projects", "category", &serde_json::json!({}), &filters).unwrap();
+
+        // Link memory to multiple categories
+        store.link_memory_to_category("mem-456", "professional", &filters).unwrap();
+        store.link_memory_to_category("mem-456", "projects", &filters).unwrap();
+
+        // Get categories for memory
+        let categories = store.get_categories_for_memory("mem-456", &filters).unwrap();
+        assert_eq!(categories.len(), 2);
+        assert!(categories.contains(&"professional".to_string()));
+        assert!(categories.contains(&"projects".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_initialize_default_categories() {
+        let store = EmbeddedGraphStore::in_memory().unwrap();
+        let filters = GraphFilters::default();
+
+        // Initialize defaults
+        store.initialize_default_categories(&filters).unwrap();
+
+        // Should have 10 default categories
+        let categories = store.get_all_categories(&filters).unwrap();
+        assert_eq!(categories.len(), 10);
+        assert!(categories.contains(&"professional".to_string()));
+        assert!(categories.contains(&"family".to_string()));
+        assert!(categories.contains(&"misc".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_initialize_default_categories_idempotent() {
+        let store = EmbeddedGraphStore::in_memory().unwrap();
+        let filters = GraphFilters::default();
+
+        // Initialize multiple times
+        store.initialize_default_categories(&filters).unwrap();
+        store.initialize_default_categories(&filters).unwrap();
+        store.initialize_default_categories(&filters).unwrap();
+
+        // Should still have exactly 10 categories
+        let categories = store.get_all_categories(&filters).unwrap();
+        assert_eq!(categories.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_category_memory_relationship() {
+        let store = EmbeddedGraphStore::in_memory().unwrap();
+        let filters = GraphFilters::default();
+
+        // Initialize categories
+        store.initialize_default_categories(&filters).unwrap();
+
+        // Link memories to categories
+        store.link_memory_to_category("work-mem-1", "professional", &filters).unwrap();
+        store.link_memory_to_category("work-mem-2", "professional", &filters).unwrap();
+        store.link_memory_to_category("family-mem-1", "family", &filters).unwrap();
+
+        // Query by category
+        let work_memories = store.get_memories_in_category("professional", &filters).unwrap();
+        assert_eq!(work_memories.len(), 2);
+        assert!(work_memories.contains(&"work-mem-1".to_string()));
+        assert!(work_memories.contains(&"work-mem-2".to_string()));
+
+        let family_memories = store.get_memories_in_category("family", &filters).unwrap();
+        assert_eq!(family_memories.len(), 1);
+        assert!(family_memories.contains(&"family-mem-1".to_string()));
+
+        // Empty category
+        let health_memories = store.get_memories_in_category("health", &filters).unwrap();
+        assert!(health_memories.is_empty());
     }
 }
