@@ -5,12 +5,24 @@
 //!
 //! # Supported Backends
 //!
+//! - **Embedded** (feature: `embedded`, default) - petgraph + SQLite hybrid
 //! - **Neo4j** (feature: `neo4j`) - Neo4j graph database
 //! - **Memgraph** (feature: `memgraph`) - Memgraph (Neo4j-compatible)
-//! - **Kuzu** (feature: `kuzu`) - Embedded graph database
 //! - **Neptune** (feature: `neptune`) - AWS Neptune
+//!
+//! # Architecture
+//!
+//! The embedded store uses a hybrid architecture:
+//! - **SQLite** for persistent storage (entities, relationships, access logs)
+//! - **petgraph** for O(1) in-memory neighbor lookups and traversal
+//!
+//! This provides both durability and fast graph operations without
+//! requiring external database dependencies.
 
 mod factory;
+
+#[cfg(feature = "embedded")]
+pub mod embedded;
 
 #[cfg(feature = "neo4j")]
 mod neo4j;
@@ -25,6 +37,9 @@ mod kuzu;
 mod neptune;
 
 pub use factory::GraphStoreFactory;
+
+#[cfg(feature = "embedded")]
+pub use embedded::EmbeddedGraphStore;
 
 #[cfg(feature = "neo4j")]
 pub use neo4j::Neo4jGraphStore;

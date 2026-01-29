@@ -34,6 +34,7 @@ petgraph = { version = "0.6", features = ["serde-1"], optional = true }
 rusqlite = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
+md5 = { workspace = true, optional = true }
 
 [features]
 default = ["embedded"]
@@ -42,7 +43,7 @@ neo4j = ["dep:neo4rs"]
 memgraph = ["dep:neo4rs"]  # Memgraph is Neo4j-compatible
 kuzu = []
 neptune = []
-embedded = ["dep:petgraph", "dep:rusqlite", "dep:chrono", "dep:uuid"]
+embedded = ["dep:petgraph", "dep:rusqlite", "dep:chrono", "dep:uuid", "dep:md5"]
 
 [dev-dependencies]
 tokio-test = { workspace = true }

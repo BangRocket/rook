@@ -198,23 +198,30 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         init_schema(&conn).unwrap();
 
-        // Insert first entity
+        // Insert first entity with all filter fields specified
         conn.execute(
-            "INSERT INTO entities (name, entity_type, user_id) VALUES ('Alice', 'person', 'user1')",
+            "INSERT INTO entities (name, entity_type, user_id, agent_id, run_id) VALUES ('Alice', 'person', 'user1', 'agent1', 'run1')",
             [],
         )
         .unwrap();
 
         // Same entity with same filters should fail
         let result = conn.execute(
-            "INSERT INTO entities (name, entity_type, user_id) VALUES ('Alice', 'person', 'user1')",
+            "INSERT INTO entities (name, entity_type, user_id, agent_id, run_id) VALUES ('Alice', 'person', 'user1', 'agent1', 'run1')",
             [],
         );
         assert!(result.is_err());
 
         // Same entity with different user should succeed
         conn.execute(
-            "INSERT INTO entities (name, entity_type, user_id) VALUES ('Alice', 'person', 'user2')",
+            "INSERT INTO entities (name, entity_type, user_id, agent_id, run_id) VALUES ('Alice', 'person', 'user2', 'agent1', 'run1')",
+            [],
+        )
+        .unwrap();
+
+        // Same entity with different agent should succeed
+        conn.execute(
+            "INSERT INTO entities (name, entity_type, user_id, agent_id, run_id) VALUES ('Alice', 'person', 'user1', 'agent2', 'run1')",
             [],
         )
         .unwrap();
