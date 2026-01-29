@@ -1,6 +1,156 @@
 //! Prompt templates for memory operations.
 
 use chrono::Local;
+use serde::{Deserialize, Serialize};
+
+/// Result of memory classification.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClassificationResult {
+    /// The category assigned to the memory.
+    pub category: String,
+    /// Whether this is a key/important memory.
+    pub is_key: bool,
+    /// Confidence score (0.0 to 1.0).
+    pub confidence: f32,
+}
+
+impl Default for ClassificationResult {
+    fn default() -> Self {
+        Self {
+            category: "misc".to_string(),
+            is_key: false,
+            confidence: 0.5,
+        }
+    }
+}
+
+/// Generate the classification prompt with valid categories.
+///
+/// The prompt instructs the LLM to classify a memory into one of the
+/// provided categories and determine if it's a key memory.
+pub fn classification_prompt(categories: &[String]) -> String {
+    let category_list = categories.join(", ");
+    format!(
+        r#"You are a memory classification system. Analyze the memory text and classify it.
+
+VALID CATEGORIES: {category_list}
+
+For the given memory, respond with a JSON object containing:
+1. "category": The most appropriate category from the list above
+2. "is_key": true if this is a fundamental fact about the user that should never be forgotten (name, birthday, core identity), false otherwise
+3. "confidence": A score from 0.0 to 1.0 indicating your confidence in the classification
+
+Key memories are rare - only core identity facts like name, birthday, and essential personal details qualify.
+Most memories are NOT key memories.
+
+Respond ONLY with a JSON object, no other text:
+{{"category": "<category>", "is_key": <true/false>, "confidence": <0.0-1.0>}}"#
+    )
+}
+
+/// Parse the classification result from LLM response, with fallback to "misc".
+///
+/// If parsing fails or the category is invalid, returns a default result
+/// with category "misc" and is_key=false.
+pub fn parse_classification(response: &str, valid_categories: &[String]) -> ClassificationResult {
+    // Try to extract JSON from response (may have markdown code blocks)
+    let json_str = extract_json(response);
+
+    // Try to parse the JSON
+    if let Ok(result) = serde_json::from_str::<ClassificationResult>(json_str) {
+        // Validate category - if invalid, fall back to misc
+        if valid_categories.contains(&result.category) {
+            return ClassificationResult {
+                category: result.category,
+                is_key: result.is_key,
+                confidence: result.confidence.clamp(0.0, 1.0),
+            };
+        }
+    }
+
+    // Fallback: try to parse with lenient matching
+    if let Some(result) = try_lenient_parse(json_str, valid_categories) {
+        return result;
+    }
+
+    // Ultimate fallback
+    ClassificationResult::default()
+}
+
+/// Extract JSON from a response that may contain markdown code blocks.
+fn extract_json(response: &str) -> &str {
+    let trimmed = response.trim();
+
+    // Check for markdown code block
+    if trimmed.starts_with("```") {
+        // Find the end of code block
+        if let Some(start) = trimmed.find('{') {
+            if let Some(end) = trimmed.rfind('}') {
+                return &trimmed[start..=end];
+            }
+        }
+    }
+
+    // Check for direct JSON
+    if let Some(start) = trimmed.find('{') {
+        if let Some(end) = trimmed.rfind('}') {
+            return &trimmed[start..=end];
+        }
+    }
+
+    trimmed
+}
+
+/// Try lenient parsing with field extraction.
+fn try_lenient_parse(json_str: &str, valid_categories: &[String]) -> Option<ClassificationResult> {
+    // Try to extract category field
+    let category = extract_string_field(json_str, "category")?;
+
+    // Validate or map to closest valid category
+    let valid_category = if valid_categories.contains(&category) {
+        category
+    } else {
+        // Check for case-insensitive match
+        valid_categories
+            .iter()
+            .find(|c| c.eq_ignore_ascii_case(&category))
+            .cloned()
+            .unwrap_or_else(|| "misc".to_string())
+    };
+
+    // Extract is_key (default false)
+    let is_key = extract_bool_field(json_str, "is_key").unwrap_or(false);
+
+    // Extract confidence (default 0.5)
+    let confidence = extract_float_field(json_str, "confidence").unwrap_or(0.5);
+
+    Some(ClassificationResult {
+        category: valid_category,
+        is_key,
+        confidence: confidence.clamp(0.0, 1.0),
+    })
+}
+
+/// Extract a string field from JSON-like text.
+fn extract_string_field(text: &str, field: &str) -> Option<String> {
+    let pattern = format!(r#""{}"\s*:\s*"([^"]*)""#, field);
+    let re = regex::Regex::new(&pattern).ok()?;
+    re.captures(text).map(|c| c[1].to_string())
+}
+
+/// Extract a boolean field from JSON-like text.
+fn extract_bool_field(text: &str, field: &str) -> Option<bool> {
+    let pattern = format!(r#""{}"\s*:\s*(true|false)"#, field);
+    let re = regex::Regex::new(&pattern).ok()?;
+    re.captures(text).map(|c| &c[1] == "true")
+}
+
+/// Extract a float field from JSON-like text.
+fn extract_float_field(text: &str, field: &str) -> Option<f32> {
+    let pattern = format!(r#""{}"\s*:\s*([0-9]*\.?[0-9]+)"#, field);
+    let re = regex::Regex::new(&pattern).ok()?;
+    re.captures(text).and_then(|c| c[1].parse().ok())
+}
 
 /// Get the user memory extraction prompt.
 pub fn user_memory_extraction_prompt() -> String {
@@ -179,4 +329,142 @@ pub fn build_update_memory_message(
         "{}\n\n{}\n\nNew retrieved facts:\n```\n{}\n```",
         prompt, memory_context, new_facts_json
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_categories() -> Vec<String> {
+        vec![
+            "personal_details".to_string(),
+            "family".to_string(),
+            "professional".to_string(),
+            "preferences".to_string(),
+            "goals".to_string(),
+            "health".to_string(),
+            "projects".to_string(),
+            "relationships".to_string(),
+            "milestones".to_string(),
+            "misc".to_string(),
+        ]
+    }
+
+    #[test]
+    fn test_classification_prompt_includes_categories() {
+        let categories = test_categories();
+        let prompt = classification_prompt(&categories);
+
+        assert!(prompt.contains("personal_details"));
+        assert!(prompt.contains("professional"));
+        assert!(prompt.contains("misc"));
+        assert!(prompt.contains("VALID CATEGORIES:"));
+    }
+
+    #[test]
+    fn test_parse_classification_valid_json() {
+        let categories = test_categories();
+        let response = r#"{"category": "professional", "is_key": false, "confidence": 0.85}"#;
+
+        let result = parse_classification(response, &categories);
+
+        assert_eq!(result.category, "professional");
+        assert!(!result.is_key);
+        assert!((result.confidence - 0.85).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_classification_key_memory() {
+        let categories = test_categories();
+        let response = r#"{"category": "personal_details", "is_key": true, "confidence": 0.95}"#;
+
+        let result = parse_classification(response, &categories);
+
+        assert_eq!(result.category, "personal_details");
+        assert!(result.is_key);
+        assert!((result.confidence - 0.95).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_classification_with_code_block() {
+        let categories = test_categories();
+        let response = r#"```json
+{"category": "goals", "is_key": false, "confidence": 0.75}
+```"#;
+
+        let result = parse_classification(response, &categories);
+
+        assert_eq!(result.category, "goals");
+        assert!(!result.is_key);
+    }
+
+    #[test]
+    fn test_parse_classification_invalid_category_fallback() {
+        let categories = test_categories();
+        let response = r#"{"category": "invalid_category", "is_key": true, "confidence": 0.9}"#;
+
+        let result = parse_classification(response, &categories);
+
+        // Should fall back to misc for invalid category
+        assert_eq!(result.category, "misc");
+        // is_key and confidence should still be parsed
+        assert!(result.is_key);
+    }
+
+    #[test]
+    fn test_parse_classification_malformed_json() {
+        let categories = test_categories();
+        let response = "This is not valid JSON at all";
+
+        let result = parse_classification(response, &categories);
+
+        // Should fall back to defaults
+        assert_eq!(result.category, "misc");
+        assert!(!result.is_key);
+        assert!((result.confidence - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_classification_partial_json() {
+        let categories = test_categories();
+        // JSON with category but missing other fields
+        let response = r#"{"category": "health"}"#;
+
+        let result = parse_classification(response, &categories);
+
+        assert_eq!(result.category, "health");
+        // Missing fields should use defaults
+        assert!(!result.is_key);
+    }
+
+    #[test]
+    fn test_parse_classification_case_insensitive() {
+        let categories = test_categories();
+        let response = r#"{"category": "PROFESSIONAL", "is_key": false, "confidence": 0.8}"#;
+
+        let result = parse_classification(response, &categories);
+
+        // Should match case-insensitively
+        assert_eq!(result.category, "professional");
+    }
+
+    #[test]
+    fn test_parse_classification_clamps_confidence() {
+        let categories = test_categories();
+        let response = r#"{"category": "misc", "is_key": false, "confidence": 1.5}"#;
+
+        let result = parse_classification(response, &categories);
+
+        // Confidence should be clamped to 1.0
+        assert!((result.confidence - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_classification_result_default() {
+        let result = ClassificationResult::default();
+
+        assert_eq!(result.category, "misc");
+        assert!(!result.is_key);
+        assert!((result.confidence - 0.5).abs() < 0.001);
+    }
 }
