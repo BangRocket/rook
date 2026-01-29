@@ -10,6 +10,8 @@
 
 pub mod embedding;
 pub mod keyword;
+pub mod temporal;
 
 pub use embedding::{EmbeddingResult, EmbeddingSimilarityLayer, SimilarityCandidate};
 pub use keyword::{KeywordNegationLayer, KeywordResult};
+pub use temporal::{TemporalConflictLayer, TemporalResult};
