@@ -280,12 +280,12 @@ fn parse_vector_store_provider(provider: &str) -> ApiResult<VectorStoreProvider>
 
 fn parse_graph_store_provider(provider: &str) -> ApiResult<GraphStoreProvider> {
     match provider.to_lowercase().as_str() {
+        "embedded" => Ok(GraphStoreProvider::Embedded),
         "neo4j" => Ok(GraphStoreProvider::Neo4j),
         "memgraph" => Ok(GraphStoreProvider::Memgraph),
-        "kuzu" => Ok(GraphStoreProvider::Kuzu),
         "neptune" => Ok(GraphStoreProvider::Neptune),
         _ => Err(ApiError::validation(format!(
-            "Unknown graph store provider: {}. Supported: neo4j, memgraph, kuzu, neptune",
+            "Unknown graph store provider: {}. Supported: embedded, neo4j, memgraph, neptune",
             provider
         ))),
     }

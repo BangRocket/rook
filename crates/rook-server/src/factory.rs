@@ -18,7 +18,7 @@ use rook_rerankers::CohereReranker;
 use rook_vector_stores::QdrantVectorStore;
 
 // Import only the default-enabled graph store
-use rook_graph_stores::Neo4jGraphStore;
+use rook_graph_stores::EmbeddedGraphStore;
 
 /// Create a Memory instance from configuration.
 pub async fn create_memory(config: MemoryConfig) -> RookResult<Memory> {
@@ -104,8 +104,8 @@ async fn create_vector_store(config: &MemoryConfig) -> RookResult<Arc<dyn Vector
 
 async fn create_graph_store(config: &GraphStoreConfig) -> RookResult<Arc<dyn GraphStore>> {
     match config.provider {
-        GraphStoreProvider::Neo4j => {
-            let store = Neo4jGraphStore::new(config.clone()).await?;
+        GraphStoreProvider::Embedded => {
+            let store = EmbeddedGraphStore::from_config(config).await?;
             Ok(Arc::new(store))
         }
         _ => Err(RookError::Configuration(format!(

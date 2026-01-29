@@ -87,8 +87,32 @@ pub struct GraphStoreConfig {
 impl Default for GraphStoreConfig {
     fn default() -> Self {
         Self {
-            provider: GraphStoreProvider::Neo4j,
-            url: "bolt://localhost:7687".to_string(),
+            provider: GraphStoreProvider::Embedded,
+            url: ":memory:".to_string(),
+            username: None,
+            password: None,
+            database: None,
+        }
+    }
+}
+
+impl GraphStoreConfig {
+    /// Create a new embedded graph store config with in-memory database.
+    pub fn embedded_memory() -> Self {
+        Self {
+            provider: GraphStoreProvider::Embedded,
+            url: ":memory:".to_string(),
+            username: None,
+            password: None,
+            database: None,
+        }
+    }
+
+    /// Create a new embedded graph store config with file-based database.
+    pub fn embedded_file(path: impl Into<String>) -> Self {
+        Self {
+            provider: GraphStoreProvider::Embedded,
+            url: path.into(),
             username: None,
             password: None,
             database: None,
@@ -100,9 +124,13 @@ impl Default for GraphStoreConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum GraphStoreProvider {
+    /// Embedded graph store using petgraph + SQLite (default, no external dependencies).
     #[default]
+    Embedded,
+    /// Neo4j graph database.
     Neo4j,
+    /// Memgraph (Neo4j-compatible).
     Memgraph,
+    /// AWS Neptune.
     Neptune,
-    Kuzu,
 }
