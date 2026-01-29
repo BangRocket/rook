@@ -259,6 +259,9 @@ impl Memory {
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
             updated_at: Some(updated_at),
+            memory_state: None,
+            dual_strength: None,
+            is_key: false,
         })
     }
 
@@ -730,6 +733,9 @@ impl Memory {
                 .get("updated_at")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
+            memory_state: None,
+            dual_strength: None,
+            is_key: false,
         }
     }
 
@@ -759,6 +765,9 @@ impl Memory {
                 .get("updated_at")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
+            memory_state: None,
+            dual_strength: None,
+            is_key: false,
         }
     }
 }
