@@ -1,10 +1,12 @@
 //! Core types for rook.
 
+mod category;
 mod filter;
 mod fsrs;
 mod memory_item;
 mod message;
 
+pub use category::{CategoryConfig, DefaultCategory, KeyMemoryConfig};
 pub use filter::*;
 pub use fsrs::{ArchivalConfig, DualStrength, FsrsState, Grade};
 pub use memory_item::*;
