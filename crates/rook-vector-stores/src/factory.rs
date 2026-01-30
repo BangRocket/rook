@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use rook_core::error::{RookError, RookResult};
-use rook_core::traits::{VectorStore, VectorStoreConfig, VectorStoreProvider};
+use rook_core::traits::{PostgresPoolConfig, VectorStore, VectorStoreConfig, VectorStoreProvider};
 use serde_json::json;
 
 /// Factory for creating vector store providers.
@@ -49,6 +49,13 @@ impl VectorStoreFactory {
             #[cfg(feature = "pgvector")]
             VectorStoreProvider::Pgvector => {
                 let store = crate::pgvector::PgVectorStore::new(config).await?;
+                Ok(Arc::new(store))
+            }
+
+            // PgvectorPooled uses deadpool connection pooling for production deployments
+            #[cfg(feature = "pgvector")]
+            VectorStoreProvider::PgvectorPooled => {
+                let store = crate::pgvector_pooled::PgVectorStorePooled::new(config).await?;
                 Ok(Arc::new(store))
             }
 
@@ -231,7 +238,10 @@ impl VectorStoreFactory {
         Self::create(VectorStoreProvider::Pinecone, config).await
     }
 
-    /// Create a pgvector store.
+    /// Create a pgvector store (non-pooled version).
+    ///
+    /// For production deployments with high concurrency, consider using
+    /// [`pgvector_pooled`](Self::pgvector_pooled) instead.
     #[cfg(feature = "pgvector")]
     pub async fn pgvector(
         collection_name: &str,
@@ -247,6 +257,84 @@ impl VectorStoreFactory {
             }),
         };
         Self::create(VectorStoreProvider::Pgvector, config).await
+    }
+
+    /// Create a pgvector store with deadpool connection pooling.
+    ///
+    /// Recommended for production deployments with high concurrency.
+    /// Uses configurable connection pooling for efficient resource management.
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_name` - Name of the collection/table
+    /// * `connection_string` - PostgreSQL connection URL
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let store = VectorStoreFactory::pgvector_pooled(
+    ///     "memories",
+    ///     "postgres://user:pass@localhost/rook"
+    /// ).await?;
+    /// ```
+    #[cfg(feature = "pgvector")]
+    pub async fn pgvector_pooled(
+        collection_name: &str,
+        connection_string: &str,
+    ) -> RookResult<Arc<dyn VectorStore>> {
+        let config = VectorStoreConfig {
+            provider: VectorStoreProvider::PgvectorPooled,
+            collection_name: collection_name.to_string(),
+            embedding_model_dims: 1536,
+            pool: Some(PostgresPoolConfig::default()),
+            config: json!({
+                "url": connection_string
+            }),
+        };
+        Self::create(VectorStoreProvider::PgvectorPooled, config).await
+    }
+
+    /// Create a pgvector store with custom pool configuration.
+    ///
+    /// Allows full control over connection pool settings for fine-tuned
+    /// production deployments.
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_name` - Name of the collection/table
+    /// * `connection_string` - PostgreSQL connection URL
+    /// * `pool_config` - Custom pool configuration
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let pool_config = PostgresPoolConfig {
+    ///     max_size: 32,
+    ///     wait_timeout_secs: 60,
+    ///     ..Default::default()
+    /// };
+    /// let store = VectorStoreFactory::pgvector_pooled_with_config(
+    ///     "memories",
+    ///     "postgres://user:pass@localhost/rook",
+    ///     pool_config,
+    /// ).await?;
+    /// ```
+    #[cfg(feature = "pgvector")]
+    pub async fn pgvector_pooled_with_config(
+        collection_name: &str,
+        connection_string: &str,
+        pool_config: PostgresPoolConfig,
+    ) -> RookResult<Arc<dyn VectorStore>> {
+        let config = VectorStoreConfig {
+            provider: VectorStoreProvider::PgvectorPooled,
+            collection_name: collection_name.to_string(),
+            embedding_model_dims: 1536,
+            pool: Some(pool_config),
+            config: json!({
+                "url": connection_string
+            }),
+        };
+        Self::create(VectorStoreProvider::PgvectorPooled, config).await
     }
 
     /// Create a Chroma vector store.
