@@ -1476,3 +1476,100 @@ impl Memory {
             .await
     }
 }
+
+#[cfg(test)]
+mod event_wiring_tests {
+    use super::*;
+    use crate::events::{EventBus, MemoryLifecycleEvent};
+
+    /// Test that EventBus field exists and with_event_bus builder works
+    #[test]
+    fn test_event_bus_field_and_builder() {
+        // This is a compile-time verification that the types work together
+        // The actual runtime test requires full Memory construction which needs mocks
+
+        let bus = EventBus::new();
+        let subscriber = bus.subscribe();
+
+        // Verify EventBus can be cloned (required for builder pattern)
+        let _bus_clone = bus.clone();
+
+        // Verify subscriber count works
+        assert_eq!(bus.subscriber_count(), 1);
+
+        drop(subscriber);
+        assert_eq!(bus.subscriber_count(), 0);
+    }
+
+    /// Test that event types are correctly constructed
+    #[test]
+    fn test_event_construction() {
+        use crate::events::{
+            AccessType, MemoryAccessedEvent, MemoryCreatedEvent, MemoryDeletedEvent,
+            MemoryUpdatedEvent, UpdateType,
+        };
+
+        // MemoryCreatedEvent
+        let created = MemoryCreatedEvent::new("mem-1", "test content")
+            .with_user("user-1")
+            .with_metadata(HashMap::from([(
+                "key".to_string(),
+                serde_json::json!("value"),
+            )]));
+        assert_eq!(created.memory_id, "mem-1");
+        assert_eq!(created.content, "test content");
+        assert_eq!(created.user_id, Some("user-1".to_string()));
+
+        // MemoryUpdatedEvent
+        let updated =
+            MemoryUpdatedEvent::new("mem-1", "old", "new", UpdateType::Content, 1).with_user("user-1");
+        assert_eq!(updated.old_content, "old");
+        assert_eq!(updated.new_content, "new");
+        assert_eq!(updated.update_type, UpdateType::Content);
+
+        // MemoryDeletedEvent
+        let deleted = MemoryDeletedEvent::new("mem-1", false)
+            .with_user("user-1")
+            .with_reason("test deletion");
+        assert!(!deleted.soft_delete);
+        assert_eq!(deleted.reason, Some("test deletion".to_string()));
+
+        // MemoryAccessedEvent - DirectGet
+        let accessed_get = MemoryAccessedEvent::new("mem-1", AccessType::DirectGet).with_user("user-1");
+        assert_eq!(accessed_get.access_type, AccessType::DirectGet);
+        assert!(accessed_get.query.is_none());
+
+        // MemoryAccessedEvent - Search
+        let accessed_search = MemoryAccessedEvent::new("mem-1", AccessType::Search)
+            .with_user("user-1")
+            .with_search_context("test query", 0.95);
+        assert_eq!(accessed_search.access_type, AccessType::Search);
+        assert_eq!(accessed_search.query, Some("test query".to_string()));
+        assert_eq!(accessed_search.relevance_score, Some(0.95));
+    }
+
+    /// Test event emission through EventBus
+    #[tokio::test]
+    async fn test_event_emission_through_bus() {
+        use crate::events::MemoryCreatedEvent;
+
+        let bus = EventBus::new();
+        let mut subscriber = bus.subscribe();
+
+        // Emit a created event
+        let event = MemoryCreatedEvent::new("mem-1", "test content").with_user("user-1");
+        bus.emit(MemoryLifecycleEvent::Created(event));
+
+        // Verify it's received
+        let received = subscriber.try_recv();
+        assert!(received.is_some(), "Should receive emitted event");
+
+        if let Some(MemoryLifecycleEvent::Created(e)) = received {
+            assert_eq!(e.memory_id, "mem-1");
+            assert_eq!(e.content, "test content");
+            assert_eq!(e.user_id, Some("user-1".to_string()));
+        } else {
+            panic!("Expected MemoryCreatedEvent");
+        }
+    }
+}

@@ -3,6 +3,499 @@
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 
+// ============================================================================
+// Entity Extraction Types
+// ============================================================================
+
+/// Entity type enumeration for knowledge graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EntityType {
+    /// A person.
+    Person,
+    /// An organization or company.
+    Organization,
+    /// A physical location.
+    Location,
+    /// A project or initiative.
+    Project,
+    /// An abstract concept or idea.
+    #[default]
+    Concept,
+    /// An event or occurrence.
+    Event,
+    /// A category for classification.
+    Category,
+}
+
+impl EntityType {
+    /// Get all entity types as strings.
+    pub fn all() -> &'static [&'static str] {
+        &["person", "organization", "location", "project", "concept", "event", "category"]
+    }
+
+    /// Get the string representation.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EntityType::Person => "person",
+            EntityType::Organization => "organization",
+            EntityType::Location => "location",
+            EntityType::Project => "project",
+            EntityType::Concept => "concept",
+            EntityType::Event => "event",
+            EntityType::Category => "category",
+        }
+    }
+
+    /// Parse from string with flexible matching.
+    pub fn from_str_flexible(s: &str) -> Option<Self> {
+        let lower = s.to_lowercase();
+        let lower = lower.trim();
+        match lower {
+            "person" | "people" | "individual" | "human" => Some(EntityType::Person),
+            "organization" | "organisation" | "org" | "company" | "corp" | "corporation" => Some(EntityType::Organization),
+            "location" | "place" | "loc" | "city" | "country" | "address" => Some(EntityType::Location),
+            "project" | "proj" | "initiative" => Some(EntityType::Project),
+            "concept" | "idea" | "topic" | "subject" => Some(EntityType::Concept),
+            "event" | "occurrence" | "happening" => Some(EntityType::Event),
+            "category" | "cat" | "classification" => Some(EntityType::Category),
+            _ => None,
+        }
+    }
+}
+
+/// Relationship type enumeration for knowledge graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationshipType {
+    /// Person works at organization.
+    WorksAt,
+    /// Person knows another person.
+    Knows,
+    /// Entity is located in location.
+    LocatedIn,
+    /// Entity belongs to category.
+    BelongsToCategory,
+    /// Category is subcategory of another.
+    SubcategoryOf,
+    /// Generic related to relationship.
+    #[default]
+    RelatedTo,
+    /// Entity is part of another entity.
+    PartOf,
+    /// Entity participates in event.
+    ParticipatedIn,
+    /// Entity created by person/org.
+    CreatedBy,
+    /// Entity manages another entity.
+    Manages,
+    /// Person is member of organization.
+    MemberOf,
+}
+
+impl RelationshipType {
+    /// Get all relationship types as strings.
+    pub fn all() -> &'static [&'static str] {
+        &[
+            "works_at", "knows", "located_in", "belongs_to_category",
+            "subcategory_of", "related_to", "part_of", "participated_in",
+            "created_by", "manages", "member_of"
+        ]
+    }
+
+    /// Get the string representation.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RelationshipType::WorksAt => "works_at",
+            RelationshipType::Knows => "knows",
+            RelationshipType::LocatedIn => "located_in",
+            RelationshipType::BelongsToCategory => "belongs_to_category",
+            RelationshipType::SubcategoryOf => "subcategory_of",
+            RelationshipType::RelatedTo => "related_to",
+            RelationshipType::PartOf => "part_of",
+            RelationshipType::ParticipatedIn => "participated_in",
+            RelationshipType::CreatedBy => "created_by",
+            RelationshipType::Manages => "manages",
+            RelationshipType::MemberOf => "member_of",
+        }
+    }
+
+    /// Parse from string with flexible matching.
+    pub fn from_str_flexible(s: &str) -> Option<Self> {
+        let lower = s.to_lowercase().replace(['-', ' '], "_");
+        let lower = lower.trim();
+        match lower {
+            "works_at" | "employed_by" | "works_for" => Some(RelationshipType::WorksAt),
+            "knows" | "acquainted_with" | "friends_with" => Some(RelationshipType::Knows),
+            "located_in" | "in" | "at" | "based_in" => Some(RelationshipType::LocatedIn),
+            "belongs_to_category" | "in_category" | "categorized_as" => Some(RelationshipType::BelongsToCategory),
+            "subcategory_of" | "child_of" | "subtype_of" => Some(RelationshipType::SubcategoryOf),
+            "related_to" | "associated_with" | "connected_to" => Some(RelationshipType::RelatedTo),
+            "part_of" | "belongs_to" | "component_of" => Some(RelationshipType::PartOf),
+            "participated_in" | "attended" | "took_part_in" => Some(RelationshipType::ParticipatedIn),
+            "created_by" | "authored_by" | "made_by" => Some(RelationshipType::CreatedBy),
+            "manages" | "supervises" | "leads" => Some(RelationshipType::Manages),
+            "member_of" | "affiliated_with" => Some(RelationshipType::MemberOf),
+            _ => None,
+        }
+    }
+}
+
+/// An entity extracted from text.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtractedEntity {
+    /// The entity name.
+    pub name: String,
+    /// The entity type.
+    pub entity_type: EntityType,
+    /// Optional description.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+impl ExtractedEntity {
+    /// Create a new extracted entity.
+    pub fn new(name: impl Into<String>, entity_type: EntityType) -> Self {
+        Self {
+            name: name.into(),
+            entity_type,
+            description: None,
+        }
+    }
+
+    /// Add a description.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+}
+
+/// A relationship extracted from text.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtractedRelationship {
+    /// The source entity name.
+    pub source: String,
+    /// The target entity name.
+    pub target: String,
+    /// The relationship type.
+    pub relationship_type: RelationshipType,
+    /// Optional context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+}
+
+impl ExtractedRelationship {
+    /// Create a new extracted relationship.
+    pub fn new(
+        source: impl Into<String>,
+        target: impl Into<String>,
+        relationship_type: RelationshipType,
+    ) -> Self {
+        Self {
+            source: source.into(),
+            target: target.into(),
+            relationship_type,
+            context: None,
+        }
+    }
+}
+
+/// Result of entity extraction.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ExtractionResult {
+    /// Extracted entities.
+    pub entities: Vec<ExtractedEntity>,
+    /// Extracted relationships.
+    pub relationships: Vec<ExtractedRelationship>,
+}
+
+impl ExtractionResult {
+    /// Check if the result is empty.
+    pub fn is_empty(&self) -> bool {
+        self.entities.is_empty() && self.relationships.is_empty()
+    }
+}
+
+// ============================================================================
+// Entity Extraction Prompts and Parsing
+// ============================================================================
+
+/// Generate the entity extraction prompt.
+pub fn entity_extraction_prompt() -> String {
+    let entity_types = EntityType::all().join(", ");
+    let relationship_types = RelationshipType::all().join(", ");
+
+    format!(
+        r#"You are an entity extraction system. Extract entities and relationships from text.
+
+ENTITY TYPES: {}
+
+RELATIONSHIP TYPES: {}
+
+Output JSON in this exact format:
+{{
+  "entities": [
+    {{"name": "entity name", "entity_type": "type", "description": "brief description"}}
+  ],
+  "relationships": [
+    {{"source": "source entity", "target": "target entity", "relationship_type": "type", "context": "relationship context"}}
+  ]
+}}
+
+Rules:
+1. Only extract explicitly mentioned entities
+2. Use the most specific entity type that applies
+3. Use the most appropriate relationship type
+4. Keep descriptions brief (under 50 words)
+5. If no entities found, return empty arrays
+6. Entity names should be normalized (proper capitalization)
+
+Return ONLY valid JSON, no other text."#,
+        entity_types, relationship_types
+    )
+}
+
+/// Parse entity extraction result from LLM response.
+pub fn parse_entity_extraction(response: &str) -> ExtractionResult {
+    let json_str = extract_json(response);
+
+    // Try to parse the raw structure first
+    #[derive(Debug, Deserialize)]
+    struct RawEntity {
+        name: Option<String>,
+        #[serde(alias = "type", alias = "entityType", alias = "entity_type")]
+        entity_type: Option<String>,
+        description: Option<String>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct RawRelationship {
+        source: Option<String>,
+        #[serde(alias = "from")]
+        _source_alt: Option<String>,
+        target: Option<String>,
+        #[serde(alias = "to")]
+        _target_alt: Option<String>,
+        #[serde(alias = "type", alias = "relationshipType", alias = "relationship_type", alias = "rel_type")]
+        relationship_type: Option<String>,
+        context: Option<String>,
+    }
+
+    impl RawRelationship {
+        fn source(&self) -> Option<&str> {
+            self.source.as_deref().or(self._source_alt.as_deref())
+        }
+        fn target(&self) -> Option<&str> {
+            self.target.as_deref().or(self._target_alt.as_deref())
+        }
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct RawExtractionResult {
+        #[serde(default)]
+        entities: Vec<RawEntity>,
+        #[serde(default)]
+        relationships: Vec<RawRelationship>,
+    }
+
+    // Try direct parsing
+    let raw: RawExtractionResult = match serde_json::from_str(json_str) {
+        Ok(r) => r,
+        Err(_) => {
+            // Try lenient parsing (fix common JSON issues)
+            let fixed = json_str
+                .replace('\'', "\"")
+                .replace(",]", "]")
+                .replace(",}", "}");
+            match serde_json::from_str(&fixed) {
+                Ok(r) => r,
+                Err(_) => return ExtractionResult::default(),
+            }
+        }
+    };
+
+    // Convert raw entities to typed entities
+    let entities: Vec<ExtractedEntity> = raw.entities
+        .into_iter()
+        .filter_map(|raw| {
+            let name = raw.name?.trim().to_string();
+            if name.is_empty() {
+                return None;
+            }
+            let entity_type = raw.entity_type
+                .as_deref()
+                .and_then(EntityType::from_str_flexible)
+                .unwrap_or(EntityType::Concept);
+            let mut entity = ExtractedEntity::new(name, entity_type);
+            if let Some(desc) = raw.description {
+                let desc = desc.trim();
+                if !desc.is_empty() {
+                    entity = entity.with_description(desc);
+                }
+            }
+            Some(entity)
+        })
+        .collect();
+
+    // Convert raw relationships to typed relationships
+    let relationships: Vec<ExtractedRelationship> = raw.relationships
+        .into_iter()
+        .filter_map(|raw| {
+            let source = raw.source()?.trim().to_string();
+            let target = raw.target()?.trim().to_string();
+            if source.is_empty() || target.is_empty() {
+                return None;
+            }
+            let relationship_type = raw.relationship_type
+                .as_deref()
+                .and_then(RelationshipType::from_str_flexible)
+                .unwrap_or(RelationshipType::RelatedTo);
+            Some(ExtractedRelationship::new(source, target, relationship_type))
+        })
+        .collect();
+
+    ExtractionResult { entities, relationships }
+}
+
+// ============================================================================
+// Entity Merging
+// ============================================================================
+
+/// Configuration for entity merging.
+#[derive(Debug, Clone)]
+pub struct MergeConfig {
+    /// Similarity threshold for merging (0.0 - 1.0).
+    /// Default: 0.85
+    pub similarity_threshold: f32,
+    /// Whether to require same entity type for merging.
+    /// Default: true
+    pub require_same_type: bool,
+}
+
+impl Default for MergeConfig {
+    fn default() -> Self {
+        Self {
+            similarity_threshold: 0.85,
+            require_same_type: true,
+        }
+    }
+}
+
+/// Result of entity merge attempt.
+#[derive(Debug, Clone)]
+pub struct MergeResult {
+    /// Whether a match was found.
+    pub matched: bool,
+    /// The matched entity ID (if found).
+    pub matched_entity_id: Option<i64>,
+    /// The matched entity name (if found).
+    pub matched_entity_name: Option<String>,
+    /// The similarity score (if found).
+    pub similarity: Option<f32>,
+}
+
+impl MergeResult {
+    /// Create a result indicating no match.
+    pub fn no_match() -> Self {
+        Self {
+            matched: false,
+            matched_entity_id: None,
+            matched_entity_name: None,
+            similarity: None,
+        }
+    }
+
+    /// Create a result indicating a match.
+    pub fn matched(entity_id: i64, entity_name: String, similarity: f32) -> Self {
+        Self {
+            matched: true,
+            matched_entity_id: Some(entity_id),
+            matched_entity_name: Some(entity_name),
+            similarity: Some(similarity),
+        }
+    }
+}
+
+/// Compute cosine similarity between two vectors.
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+
+    let mut dot_product = 0.0f32;
+    let mut norm_a = 0.0f32;
+    let mut norm_b = 0.0f32;
+
+    for (x, y) in a.iter().zip(b.iter()) {
+        dot_product += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+
+    let norm_a = norm_a.sqrt();
+    let norm_b = norm_b.sqrt();
+
+    if norm_a == 0.0 || norm_b == 0.0 {
+        return 0.0;
+    }
+
+    dot_product / (norm_a * norm_b)
+}
+
+/// Find a matching entity from existing entities using embedding similarity.
+pub fn find_entity_match(
+    entity: &ExtractedEntity,
+    entity_embedding: &[f32],
+    existing: &[crate::traits::EntityWithEmbedding],
+    config: &MergeConfig,
+) -> MergeResult {
+    if existing.is_empty() || entity_embedding.is_empty() {
+        return MergeResult::no_match();
+    }
+
+    let mut best_match: Option<(i64, String, f32)> = None;
+
+    for candidate in existing {
+        // Check type constraint
+        if config.require_same_type {
+            let candidate_type = EntityType::from_str_flexible(&candidate.entity_type);
+            if candidate_type != Some(entity.entity_type) {
+                continue;
+            }
+        }
+
+        // Get embedding (skip if not available)
+        let candidate_embedding = match &candidate.embedding {
+            Some(e) => e,
+            None => continue,
+        };
+
+        // Compute similarity
+        let similarity = cosine_similarity(entity_embedding, candidate_embedding);
+
+        // Check threshold
+        if similarity < config.similarity_threshold {
+            continue;
+        }
+
+        // Update best match
+        match &best_match {
+            None => {
+                best_match = Some((candidate.id, candidate.name.clone(), similarity));
+            }
+            Some((_, _, best_sim)) if similarity > *best_sim => {
+                best_match = Some((candidate.id, candidate.name.clone(), similarity));
+            }
+            _ => {}
+        }
+    }
+
+    match best_match {
+        Some((id, name, sim)) => MergeResult::matched(id, name, sim),
+        None => MergeResult::no_match(),
+    }
+}
+
 /// Result of memory classification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClassificationResult {
