@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "rook-rs"
-version = "0.1.0"
+version = "0.1.1"
 description = "Long-term memory layer for AI agents - Python bindings for Rook"
 readme = "README.md"
 license = { text = "Apache-2.0" }

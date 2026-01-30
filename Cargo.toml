@@ -29,7 +29,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.75"
 license = "Apache-2.0"
@@ -119,12 +119,12 @@ sha2 = "0.10"
 hex = "0.4"
 
 # Internal crates
-rook-core = { version = "0.1.0", path = "crates/rook-core" }
-rook-llm = { version = "0.1.0", path = "crates/rook-llm" }
-rook-embeddings = { version = "0.1.0", path = "crates/rook-embeddings" }
-rook-vector-stores = { version = "0.1.0", path = "crates/rook-vector-stores" }
-rook-graph-stores = { version = "0.1.0", path = "crates/rook-graph-stores" }
-rook-rerankers = { version = "0.1.0", path = "crates/rook-rerankers" }
-rook-client = { version = "0.1.0", path = "crates/rook-client" }
-rook-server = { version = "0.1.0", path = "crates/rook-server" }
-rook-extractors = { version = "0.1.0", path = "crates/rook-extractors" }
+rook-core = { version = "0.1.1", path = "crates/rook-core" }
+rook-llm = { version = "0.1.1", path = "crates/rook-llm" }
+rook-embeddings = { version = "0.1.1", path = "crates/rook-embeddings" }
+rook-vector-stores = { version = "0.1.1", path = "crates/rook-vector-stores" }
+rook-graph-stores = { version = "0.1.1", path = "crates/rook-graph-stores" }
+rook-rerankers = { version = "0.1.1", path = "crates/rook-rerankers" }
+rook-client = { version = "0.1.1", path = "crates/rook-client" }
+rook-server = { version = "0.1.1", path = "crates/rook-server" }
+rook-extractors = { version = "0.1.1", path = "crates/rook-extractors" }
