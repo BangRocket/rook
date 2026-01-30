@@ -112,10 +112,13 @@ mod tests {
     fn test_pipeline_with_defaults() {
         let pipeline = ExtractionPipeline::with_defaults();
 
-        #[cfg(all(feature = "pdf", feature = "docx"))]
+        #[cfg(all(feature = "pdf", feature = "docx", feature = "image"))]
+        assert_eq!(pipeline.len(), 3);
+
+        #[cfg(all(feature = "pdf", feature = "docx", not(feature = "image")))]
         assert_eq!(pipeline.len(), 2);
 
-        #[cfg(all(feature = "pdf", not(feature = "docx")))]
+        #[cfg(all(feature = "pdf", not(feature = "docx"), not(feature = "image")))]
         assert_eq!(pipeline.len(), 1);
     }
 

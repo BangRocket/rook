@@ -3,6 +3,15 @@
 //! Provides extractors for PDF, DOCX, and image content with a unified
 //! trait-based interface following codebase patterns.
 //!
+//! # Features
+//!
+//! - `pdf` (default) - PDF text extraction via pdf-extract
+//! - `docx` (default) - DOCX text extraction via docx-rs
+//! - `image` - Image format detection and loading
+//! - `ocr` - Image OCR via tesseract (requires tesseract installed)
+//! - `vision` - Image description via vision LLM (GPT-4o)
+//! - `full` - All extraction features
+//!
 //! # Example
 //!
 //! ```ignore
@@ -12,9 +21,13 @@
 //! let pipeline = ExtractionPipeline::with_defaults();
 //! let result = pipeline.extract(&pdf_bytes, "application/pdf").await?;
 //!
-//! // Or create specific extractors
-//! let extractor = ExtractorFactory::pdf();
-//! let result = extractor.extract(&pdf_bytes).await?;
+//! // Document extractors
+//! let pdf = ExtractorFactory::pdf();
+//! let docx = ExtractorFactory::docx();
+//!
+//! // Image extraction (OCR + Vision combined)
+//! let image = ExtractorFactory::image();
+//! let result = image.extract(&png_bytes).await?;
 //! ```
 
 mod error;
@@ -28,6 +41,12 @@ mod pdf;
 #[cfg(feature = "docx")]
 mod docx;
 
+#[cfg(feature = "image")]
+pub mod image;
+
+#[cfg(feature = "vision")]
+pub mod vision;
+
 pub use error::{ExtractError, ExtractResult};
 pub use factory::ExtractorFactory;
 pub use pipeline::ExtractionPipeline;
@@ -38,6 +57,12 @@ pub use pdf::PdfExtractor;
 
 #[cfg(feature = "docx")]
 pub use docx::DocxExtractor;
+
+#[cfg(feature = "image")]
+pub use image::{ImageExtractionConfig, ImageExtractor};
+
+#[cfg(feature = "vision")]
+pub use vision::{VisionConfig, VisionLlmExtractor};
 
 use async_trait::async_trait;
 

@@ -9,9 +9,10 @@ use crate::Extractor;
 use async_openai::{
     config::OpenAIConfig,
     types::{
-        ChatCompletionRequestMessage, ChatCompletionRequestUserMessage,
-        ChatCompletionRequestUserMessageContent, ChatCompletionRequestUserMessageContentPart,
-        CreateChatCompletionRequest, ImageDetail, ImageUrl,
+        ChatCompletionRequestMessage, ChatCompletionRequestMessageContentPartImage,
+        ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+        ChatCompletionRequestUserMessageContentPart, CreateChatCompletionRequest, ImageDetail,
+        ImageUrl,
     },
     Client,
 };
@@ -130,23 +131,25 @@ impl Extractor for VisionLlmExtractor {
         // Build the vision request
         let prompt = self.build_prompt();
 
+        let image_part = ChatCompletionRequestMessageContentPartImage {
+            image_url: ImageUrl {
+                url: data_url,
+                detail: Some(self.config.detail.clone()),
+            },
+        };
+
         let request = CreateChatCompletionRequest {
             model: self.config.model.clone(),
             messages: vec![ChatCompletionRequestMessage::User(
                 ChatCompletionRequestUserMessage {
                     content: ChatCompletionRequestUserMessageContent::Array(vec![
                         ChatCompletionRequestUserMessageContentPart::Text(prompt.into()),
-                        ChatCompletionRequestUserMessageContentPart::ImageUrl {
-                            image_url: ImageUrl {
-                                url: data_url,
-                                detail: Some(self.config.detail.clone()),
-                            },
-                        },
+                        ChatCompletionRequestUserMessageContentPart::ImageUrl(image_part),
                     ]),
                     name: None,
                 },
             )],
-            max_tokens: Some(self.config.max_tokens),
+            max_completion_tokens: Some(self.config.max_tokens),
             ..Default::default()
         };
 
@@ -224,10 +227,12 @@ mod tests {
 
     #[test]
     fn test_format_detection_webp() {
+        // WEBP requires: RIFF (4) + size (4) + WEBP (4) = 12 bytes, check is > 12
         let mut webp = Vec::new();
         webp.extend_from_slice(b"RIFF");
         webp.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // size placeholder
         webp.extend_from_slice(b"WEBP");
+        webp.extend_from_slice(&[0x00]); // extra byte to pass > 12 check
         assert_eq!(VisionLlmExtractor::detect_format(&webp).unwrap(), "webp");
     }
 
