@@ -55,6 +55,9 @@ fsrs = "5.2"
 # Full-text search
 tantivy = "0.25"
 
+# Bloom filter
+fastbloom = "0.14"
+
 # Error handling
 thiserror = "1.0"
 anyhow = "1.0"
@@ -87,6 +90,12 @@ tempfile = "3"
 
 # Scheduling
 tokio-cron-scheduler = "0.14"
+
+# Retry and crypto (for webhook delivery)
+backon = "1.2"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
 
 # Internal crates
 rook-core = { path = "crates/rook-core" }

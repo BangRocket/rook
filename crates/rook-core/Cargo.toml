@@ -47,12 +47,21 @@ fsrs = { workspace = true }
 # Full-text search
 tantivy = { workspace = true }
 
+# Bloom filter
+fastbloom = { workspace = true }
+
 # Graph operations
 petgraph = { workspace = true }
 ordered-float = { workspace = true }
 
 # Scheduling
 tokio-cron-scheduler = { workspace = true }
+
+# Retry and crypto (for webhook delivery)
+backon = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }

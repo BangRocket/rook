@@ -26,6 +26,7 @@
 //! );
 //! ```
 
+mod bloom;
 mod store;
 mod triggers;
 mod types;
