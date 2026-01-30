@@ -6,6 +6,10 @@
 //! - `TimeElapsed`: fires after a duration since creation/last fire (INT-04)
 //! - `ScheduledTime`: fires at specific datetime or cron schedule (INT-05)
 //!
+//! The system uses tiered checking (INT-06, INT-07):
+//! - Tier 1: Bloom filter for fast keyword pre-screening (every message)
+//! - Tier 2: Embedding similarity for topics (at configurable interval)
+//!
 //! # Example
 //!
 //! ```
@@ -27,10 +31,15 @@
 //! ```
 
 mod bloom;
+mod checker;
+mod scheduler;
 mod store;
 mod triggers;
 mod types;
 
+pub use bloom::{BloomConfig, KeywordBloomFilter};
+pub use checker::{CheckerConfig, IntentionChecker};
+pub use scheduler::{FiredIntentionReceiver, IntentionScheduler};
 pub use store::{IntentionStore, SqliteIntentionStore};
 pub use triggers::{ActionResult, FiredIntention, TriggerReason};
 pub use types::{Intention, IntentionAction, TriggerCondition};

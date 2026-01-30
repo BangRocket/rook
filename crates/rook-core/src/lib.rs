@@ -61,6 +61,7 @@ pub use versioning::{
     VersionSummary,
 };
 pub use intentions::{
-    ActionResult, FiredIntention, Intention, IntentionAction, IntentionStore,
+    ActionResult, BloomConfig, CheckerConfig, FiredIntention, FiredIntentionReceiver, Intention,
+    IntentionAction, IntentionChecker, IntentionScheduler, IntentionStore, KeywordBloomFilter,
     SqliteIntentionStore, TriggerCondition, TriggerReason,
 };
