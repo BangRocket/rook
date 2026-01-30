@@ -172,6 +172,7 @@ impl VectorStoreFactory {
             provider: VectorStoreProvider::Qdrant,
             collection_name: collection_name.to_string(),
             embedding_model_dims: 1536,
+            pool: None,
             config: json!({}),
         };
         Self::create(VectorStoreProvider::Qdrant, config).await
@@ -187,6 +188,7 @@ impl VectorStoreFactory {
             provider: VectorStoreProvider::Qdrant,
             collection_name: collection_name.to_string(),
             embedding_model_dims: 1536,
+            pool: None,
             config: json!({
                 "url": url
             }),
@@ -201,6 +203,7 @@ impl VectorStoreFactory {
             provider: VectorStoreProvider::Redis,
             collection_name: collection_name.to_string(),
             embedding_model_dims: 1536,
+            pool: None,
             config: json!({
                 "url": url
             }),
@@ -219,6 +222,7 @@ impl VectorStoreFactory {
             provider: VectorStoreProvider::Pinecone,
             collection_name: index_name.to_string(),
             embedding_model_dims: 1536,
+            pool: None,
             config: json!({
                 "api_key": api_key,
                 "environment": environment
@@ -237,6 +241,7 @@ impl VectorStoreFactory {
             provider: VectorStoreProvider::Pgvector,
             collection_name: collection_name.to_string(),
             embedding_model_dims: 1536,
+            pool: None,
             config: json!({
                 "url": connection_string
             }),
@@ -251,6 +256,7 @@ impl VectorStoreFactory {
             provider: VectorStoreProvider::Chroma,
             collection_name: collection_name.to_string(),
             embedding_model_dims: 1536,
+            pool: None,
             config: json!({
                 "url": url
             }),

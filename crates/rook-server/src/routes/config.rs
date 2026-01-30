@@ -143,6 +143,7 @@ pub async fn configure(
             provider,
             collection_name: vs.collection_name.unwrap_or(collection_name.clone()),
             embedding_model_dims: vs.embedding_dims.unwrap_or(embedding_dims),
+            pool: None,
             config: config_json,
         }
     } else {
@@ -257,6 +258,9 @@ fn parse_vector_store_provider(provider: &str) -> ApiResult<VectorStoreProvider>
         "opensearch" => Ok(VectorStoreProvider::Opensearch),
         "mongodb" => Ok(VectorStoreProvider::MongoDB),
         "pgvector" => Ok(VectorStoreProvider::Pgvector),
+        "pgvector_pooled" | "postgres_pooled" | "postgresql_pooled" => {
+            Ok(VectorStoreProvider::PgvectorPooled)
+        }
         "pinecone" => Ok(VectorStoreProvider::Pinecone),
         "weaviate" => Ok(VectorStoreProvider::Weaviate),
         "chroma" => Ok(VectorStoreProvider::Chroma),

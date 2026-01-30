@@ -42,7 +42,9 @@ elasticsearch = { version = "8.5.0-alpha.1", optional = true }
 opensearch = { version = "2.2", optional = true }
 mongodb = { version = "2.8", optional = true }
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "mysql", "sqlite"], optional = true }
-pgvector = { version = "0.4", features = ["sqlx"], optional = true }
+pgvector = { version = "0.4", features = ["sqlx", "postgres"], optional = true }
+deadpool-postgres = { version = "0.14", features = ["rt_tokio_1"], optional = true }
+tokio-postgres = { version = "0.7", optional = true }
 aws-sdk-s3 = { version = "1.15", optional = true }
 aws-config = { version = "1.1", optional = true }
 tonic = { version = "0.10", optional = true }
@@ -93,7 +95,8 @@ opensearch = ["dep:opensearch"]
 mongodb = ["dep:mongodb"]
 
 # SQL-based backends
-pgvector = ["dep:sqlx", "dep:pgvector"]
+pgvector = ["dep:sqlx", "dep:pgvector", "dep:deadpool-postgres", "dep:tokio-postgres"]
+pgvector-pooled = ["pgvector"]
 mysql = ["dep:sqlx"]
 sqlite = ["dep:sqlx"]
 

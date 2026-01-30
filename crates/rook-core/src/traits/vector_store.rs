@@ -175,6 +175,62 @@ pub trait HybridSearch: VectorStore {
     ) -> RookResult<Vec<VectorSearchResult>>;
 }
 
+/// PostgreSQL connection pool configuration.
+///
+/// Controls deadpool-postgres connection pool behavior for production deployments.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostgresPoolConfig {
+    /// Maximum number of connections in the pool (default: 16).
+    #[serde(default = "default_pool_size")]
+    pub max_size: usize,
+    /// Timeout waiting for a connection from pool in seconds (default: 30).
+    #[serde(default = "default_wait_timeout")]
+    pub wait_timeout_secs: u64,
+    /// Timeout for creating a new connection in seconds (default: 5).
+    #[serde(default = "default_create_timeout")]
+    pub create_timeout_secs: u64,
+    /// Timeout for recycling a connection in seconds (default: 5).
+    #[serde(default = "default_recycle_timeout")]
+    pub recycle_timeout_secs: u64,
+    /// Connection recycling method: "fast" or "verified" (default: "fast").
+    /// "fast" - Quick recycling without verification query.
+    /// "verified" - Runs a test query before reusing connections.
+    #[serde(default = "default_recycling_method")]
+    pub recycling_method: String,
+}
+
+fn default_pool_size() -> usize {
+    16
+}
+
+fn default_wait_timeout() -> u64 {
+    30
+}
+
+fn default_create_timeout() -> u64 {
+    5
+}
+
+fn default_recycle_timeout() -> u64 {
+    5
+}
+
+fn default_recycling_method() -> String {
+    "fast".to_string()
+}
+
+impl Default for PostgresPoolConfig {
+    fn default() -> Self {
+        Self {
+            max_size: default_pool_size(),
+            wait_timeout_secs: default_wait_timeout(),
+            create_timeout_secs: default_create_timeout(),
+            recycle_timeout_secs: default_recycle_timeout(),
+            recycling_method: default_recycling_method(),
+        }
+    }
+}
+
 /// Vector store configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VectorStoreConfig {
@@ -185,6 +241,10 @@ pub struct VectorStoreConfig {
     /// Embedding dimensions.
     #[serde(default = "default_embedding_dims")]
     pub embedding_model_dims: usize,
+    /// PostgreSQL connection pool configuration (optional).
+    /// Only used when provider is pgvector or pgvector_pooled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pool: Option<PostgresPoolConfig>,
     /// Provider-specific configuration.
     #[serde(flatten)]
     pub config: serde_json::Value,
@@ -200,6 +260,7 @@ impl Default for VectorStoreConfig {
             provider: VectorStoreProvider::Qdrant,
             collection_name: "rook".to_string(),
             embedding_model_dims: default_embedding_dims(),
+            pool: None,
             config: serde_json::json!({}),
         }
     }
@@ -213,6 +274,9 @@ pub enum VectorStoreProvider {
     Qdrant,
     Pinecone,
     Pgvector,
+    /// PostgreSQL with pgvector extension using deadpool connection pooling.
+    /// Recommended for production deployments with high concurrency.
+    PgvectorPooled,
     Redis,
     MongoDB,
     Elasticsearch,
