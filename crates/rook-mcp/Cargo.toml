@@ -26,8 +26,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1.0"
 
 # Internal dependencies
-rook-core = { version = "0.1.0", path = "../rook-core" }
-rook-llm = { version = "0.1.0", path = "../rook-llm" }
-rook-embeddings = { version = "0.1.0", path = "../rook-embeddings" }
-rook-vector-stores = { version = "0.1.0", path = "../rook-vector-stores", features = ["sqlite-vec"] }
-dirs = "5.0"
+rook-core = { workspace = true }
+rook-llm = { workspace = true }
+rook-embeddings = { workspace = true }
+rook-vector-stores = { workspace = true, features = ["sqlite-vec"] }
+dirs = { workspace = true }
