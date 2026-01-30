@@ -1,0 +1,27 @@
+[package]
+name = "rook-mcp"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "MCP server for Rook memory system"
+
+[[bin]]
+name = "rook-mcp"
+path = "src/main.rs"
+
+[dependencies]
+rmcp = { version = "0.14", features = ["server", "transport-io"] }
+tokio = { version = "1.35", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+schemars = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
+
+# Internal dependencies
+rook-core = { path = "../rook-core" }
+rook-llm = { path = "../rook-llm" }
+rook-embeddings = { path = "../rook-embeddings" }
+rook-vector-stores = { path = "../rook-vector-stores", features = ["sqlite-vec"] }
+dirs = "5.0"

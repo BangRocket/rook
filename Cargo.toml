@@ -10,6 +10,8 @@ members = [
     "crates/rook-client",
     "crates/rook-server",
     "crates/rook-extractors",
+    "crates/rook-python",
+    "crates/rook-mcp",
 ]
 
 [workspace.package]
