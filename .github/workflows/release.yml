@@ -35,12 +35,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Login to crates.io
         run: cargo login ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       # Publish in dependency order with delays between each
+      # Layer 1: No internal dependencies
       - name: Publish rook-extractors
         run: cargo publish -p rook-extractors --allow-dirty || true
         continue-on-error: true
@@ -48,6 +49,7 @@ jobs:
       - name: Wait for crates.io index
         run: sleep 30
 
+      # Layer 2: Depends on rook-extractors (optional)
       - name: Publish rook-core
         run: cargo publish -p rook-core --allow-dirty || true
         continue-on-error: true
@@ -55,21 +57,34 @@ jobs:
       - name: Wait for crates.io index
         run: sleep 30
 
+      # Layer 3: Depends on rook-core
       - name: Publish rook-llm
         run: cargo publish -p rook-llm --allow-dirty || true
         continue-on-error: true
+
+      - name: Wait for crates.io index
+        run: sleep 30
 
       - name: Publish rook-embeddings
         run: cargo publish -p rook-embeddings --allow-dirty || true
         continue-on-error: true
 
+      - name: Wait for crates.io index
+        run: sleep 30
+
       - name: Publish rook-vector-stores
         run: cargo publish -p rook-vector-stores --allow-dirty || true
         continue-on-error: true
 
+      - name: Wait for crates.io index
+        run: sleep 30
+
       - name: Publish rook-graph-stores
         run: cargo publish -p rook-graph-stores --allow-dirty || true
         continue-on-error: true
+
+      - name: Wait for crates.io index
+        run: sleep 30
 
       - name: Publish rook-rerankers
         run: cargo publish -p rook-rerankers --allow-dirty || true
@@ -82,9 +97,16 @@ jobs:
         run: cargo publish -p rook-client --allow-dirty || true
         continue-on-error: true
 
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      # Layer 4: Depends on multiple Layer 3 crates
       - name: Publish rook-server
         run: cargo publish -p rook-server --allow-dirty || true
         continue-on-error: true
+
+      - name: Wait for crates.io index
+        run: sleep 30
 
       - name: Publish rook-mcp
         run: cargo publish -p rook-mcp --allow-dirty || true
@@ -107,7 +129,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Setup Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install maturin
         run: pip install maturin

@@ -7012,7 +7012,7 @@ dependencies = [
 
 [[package]]
 name = "rook-client"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -7029,7 +7029,7 @@ dependencies = [
 
 [[package]]
 name = "rook-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arrow",
  "async-trait",
@@ -7072,7 +7072,7 @@ dependencies = [
 
 [[package]]
 name = "rook-embeddings"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-openai 0.24.1",
  "async-trait",
@@ -7090,7 +7090,7 @@ dependencies = [
 
 [[package]]
 name = "rook-extractors"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-openai 0.28.3",
  "async-trait",
@@ -7108,7 +7108,7 @@ dependencies = [
 
 [[package]]
 name = "rook-graph-stores"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -7133,7 +7133,7 @@ dependencies = [
 
 [[package]]
 name = "rook-llm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-openai 0.24.1",
  "async-trait",
@@ -7153,7 +7153,7 @@ dependencies = [
 
 [[package]]
 name = "rook-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "dirs 5.0.1",
@@ -7172,7 +7172,7 @@ dependencies = [
 
 [[package]]
 name = "rook-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "pyo3",
  "rook-core",
@@ -7185,7 +7185,7 @@ dependencies = [
 
 [[package]]
 name = "rook-rerankers"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "reqwest 0.12.28",
@@ -7200,7 +7200,7 @@ dependencies = [
 
 [[package]]
 name = "rook-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "axum 0.7.9",
@@ -7227,7 +7227,7 @@ dependencies = [
 
 [[package]]
 name = "rook-vector-stores"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "aws-config",

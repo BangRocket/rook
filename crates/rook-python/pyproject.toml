@@ -40,6 +40,3 @@ Issues = "https://github.com/BangRocket/rook/issues"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
-
-[tool.poetry.dependencies]
-maturin = "^1.11.5"
