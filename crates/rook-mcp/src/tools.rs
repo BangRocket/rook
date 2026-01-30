@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_add_memory_input_schema() {
-        let schema = ::schemars::schema_for!(AddMemoryInput);
+        let schema = rmcp::schemars::schema_for!(AddMemoryInput);
         let json = serde_json::to_string_pretty(&schema).unwrap();
         assert!(json.contains("content"));
         assert!(json.contains("user_id"));
