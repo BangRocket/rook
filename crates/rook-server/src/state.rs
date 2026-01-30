@@ -5,6 +5,7 @@ use std::sync::Arc;
 use rook_core::config::MemoryConfig;
 use rook_core::error::RookResult;
 use rook_core::memory::Memory;
+use rook_core::BackgroundRuntime;
 use tokio::sync::RwLock;
 
 use crate::factory::create_memory;
@@ -13,6 +14,8 @@ use crate::factory::create_memory;
 #[derive(Clone)]
 pub struct AppState {
     pub inner: Arc<RwLock<AppStateInner>>,
+    /// Background runtime for schedulers (managed separately for lifecycle).
+    runtime: Option<Arc<RwLock<BackgroundRuntime>>>,
 }
 
 pub struct AppStateInner {
@@ -28,6 +31,7 @@ impl AppState {
                 memory: None,
                 config: None,
             })),
+            runtime: None,
         }
     }
 
@@ -38,7 +42,29 @@ impl AppState {
                 memory: Some(memory),
                 config: Some(config),
             })),
+            runtime: None,
         }
+    }
+
+    /// Create with BackgroundRuntime.
+    pub fn new_with_runtime(runtime: BackgroundRuntime) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(AppStateInner {
+                memory: None,
+                config: None,
+            })),
+            runtime: Some(Arc::new(RwLock::new(runtime))),
+        }
+    }
+
+    /// Get a reference to the runtime.
+    pub fn runtime(&self) -> Option<Arc<RwLock<BackgroundRuntime>>> {
+        self.runtime.clone()
+    }
+
+    /// Take the runtime for shutdown (consumes the Arc clone).
+    pub fn take_runtime(&self) -> Option<Arc<RwLock<BackgroundRuntime>>> {
+        self.runtime.clone()
     }
 
     /// Check if memory is configured.
