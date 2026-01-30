@@ -59,6 +59,9 @@ mod mongodb;
 #[cfg(feature = "pgvector")]
 mod pgvector;
 
+#[cfg(feature = "pgvector")]
+mod pgvector_pooled;
+
 #[cfg(feature = "mysql")]
 mod mysql;
 
@@ -136,6 +139,9 @@ pub use mongodb::MongoDBVectorStore;
 
 #[cfg(feature = "pgvector")]
 pub use pgvector::PgVectorStore;
+
+#[cfg(feature = "pgvector")]
+pub use pgvector_pooled::PgVectorStorePooled;
 
 #[cfg(feature = "mysql")]
 pub use mysql::MySQLVectorStore;
