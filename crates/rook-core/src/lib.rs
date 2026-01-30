@@ -28,6 +28,7 @@ pub mod import;
 pub mod ingestion;
 pub mod intentions;
 pub mod memory;
+pub mod migration;
 #[cfg(feature = "multimodal")]
 pub mod multimodal;
 pub mod retrieval;
@@ -85,3 +86,6 @@ pub use export::{export_jsonl, ExportStats, ExportableMemory};
 #[cfg(feature = "export")]
 pub use export::export_parquet;
 pub use import::{import_jsonl, ImportStats, ImportableMemory};
+
+// Migration utilities
+pub use migration::{migrate_from_mem0, Mem0Memory, MigrationStats};
