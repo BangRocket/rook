@@ -5,19 +5,41 @@ build-backend = "maturin"
 [project]
 name = "rook-rs"
 version = "0.1.0"
-description = "Python bindings for Rook memory system"
+description = "Long-term memory layer for AI agents - Python bindings for Rook"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.8"
+authors = [
+    { name = "Joshua Heidorn" }
+]
+keywords = ["memory", "ai", "llm", "agents", "cognitive", "embeddings", "vector-store"]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Database",
+    "Typing :: Typed",
 ]
+
+[project.urls]
+Homepage = "https://github.com/BangRocket/rook"
+Repository = "https://github.com/BangRocket/rook"
+Documentation = "https://github.com/BangRocket/rook#readme"
+Issues = "https://github.com/BangRocket/rook/issues"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+
+[tool.poetry.dependencies]
+maturin = "^1.11.5"

@@ -1,0 +1,210 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (do not publish)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Build and test before releasing
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: cargo build --release --verbose
+      - name: Run tests
+        run: cargo test --verbose
+
+  # Publish Rust crates to crates.io
+  publish-crates:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.dry_run != 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Login to crates.io
+        run: cargo login ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      # Publish in dependency order with delays between each
+      - name: Publish rook-extractors
+        run: cargo publish -p rook-extractors --allow-dirty || true
+        continue-on-error: true
+
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      - name: Publish rook-core
+        run: cargo publish -p rook-core --allow-dirty || true
+        continue-on-error: true
+
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      - name: Publish rook-llm
+        run: cargo publish -p rook-llm --allow-dirty || true
+        continue-on-error: true
+
+      - name: Publish rook-embeddings
+        run: cargo publish -p rook-embeddings --allow-dirty || true
+        continue-on-error: true
+
+      - name: Publish rook-vector-stores
+        run: cargo publish -p rook-vector-stores --allow-dirty || true
+        continue-on-error: true
+
+      - name: Publish rook-graph-stores
+        run: cargo publish -p rook-graph-stores --allow-dirty || true
+        continue-on-error: true
+
+      - name: Publish rook-rerankers
+        run: cargo publish -p rook-rerankers --allow-dirty || true
+        continue-on-error: true
+
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      - name: Publish rook-client
+        run: cargo publish -p rook-client --allow-dirty || true
+        continue-on-error: true
+
+      - name: Publish rook-server
+        run: cargo publish -p rook-server --allow-dirty || true
+        continue-on-error: true
+
+      - name: Publish rook-mcp
+        run: cargo publish -p rook-mcp --allow-dirty || true
+        continue-on-error: true
+
+  # Build Python wheels
+  build-python:
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build wheel
+        working-directory: crates/rook-python
+        run: maturin build --release --strip
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: target/wheels/*.whl
+
+  # Build Linux wheels with manylinux
+  build-linux-manylinux:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheels with manylinux
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: crates/rook-python
+          target: x86_64
+          args: --release --strip --out dist
+          manylinux: auto
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-manylinux
+          path: crates/rook-python/dist/*.whl
+
+  # Build macOS universal wheel
+  build-macos-universal:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: crates/rook-python
+          target: universal2-apple-darwin
+          args: --release --strip --out dist
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-universal
+          path: crates/rook-python/dist/*.whl
+
+  # Publish to PyPI
+  publish-pypi:
+    needs: [build-linux-manylinux, build-macos-universal]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.dry_run != 'true'
+    steps:
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: PyO3/maturin-action@v1
+        env:
+          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        with:
+          command: upload
+          args: --non-interactive dist/*
+
+  # Create GitHub Release
+  create-release:
+    needs: [publish-crates, publish-pypi]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/*.whl
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}

@@ -1,8 +1,14 @@
 [package]
 name = "rook-mcp"
-version = "0.1.0"
-edition = "2021"
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
 description = "MCP server for Rook memory system"
 
 [[bin]]
@@ -20,8 +26,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1.0"
 
 # Internal dependencies
-rook-core = { path = "../rook-core" }
-rook-llm = { path = "../rook-llm" }
-rook-embeddings = { path = "../rook-embeddings" }
-rook-vector-stores = { path = "../rook-vector-stores", features = ["sqlite-vec"] }
+rook-core = { version = "0.1.0", path = "../rook-core" }
+rook-llm = { version = "0.1.0", path = "../rook-llm" }
+rook-embeddings = { version = "0.1.0", path = "../rook-embeddings" }
+rook-vector-stores = { version = "0.1.0", path = "../rook-vector-stores", features = ["sqlite-vec"] }
 dirs = "5.0"

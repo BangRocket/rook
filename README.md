@@ -170,7 +170,7 @@ asyncio.run(main())
 
 ```bash
 # Clone the repository
-git clone https://github.com/heidornj/rook.git
+git clone https://github.com/BangRocket/rook.git
 cd rook
 
 # Build all crates

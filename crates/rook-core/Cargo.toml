@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
 description = "Core library for rook - traits, types, and memory implementation"
 
 [dependencies]
@@ -64,7 +69,7 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 
 # Multimodal extraction (feature-gated)
-rook-extractors = { path = "../rook-extractors", optional = true }
+rook-extractors = { version = "0.1.0", path = "../rook-extractors", optional = true }
 
 # Export formats (feature-gated)
 arrow = { version = "53", optional = true }

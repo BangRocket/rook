@@ -33,9 +33,13 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 license = "Apache-2.0"
-repository = "https://github.com/heidornj/rook"
-authors = ["Rook Team"]
+repository = "https://github.com/BangRocket/rook"
+homepage = "https://github.com/BangRocket/rook"
+documentation = "https://docs.rs/rook-core"
+authors = ["Joshua Heidorn"]
 description = "Long-term memory layer for AI agents"
+keywords = ["memory", "ai", "llm", "agents", "cognitive"]
+categories = ["science", "database", "asynchronous"]
 
 [workspace.dependencies]
 # Async runtime
@@ -115,12 +119,12 @@ sha2 = "0.10"
 hex = "0.4"
 
 # Internal crates
-rook-core = { path = "crates/rook-core" }
-rook-llm = { path = "crates/rook-llm" }
-rook-embeddings = { path = "crates/rook-embeddings" }
-rook-vector-stores = { path = "crates/rook-vector-stores" }
-rook-graph-stores = { path = "crates/rook-graph-stores" }
-rook-rerankers = { path = "crates/rook-rerankers" }
-rook-client = { path = "crates/rook-client" }
-rook-server = { path = "crates/rook-server" }
-rook-extractors = { path = "crates/rook-extractors" }
+rook-core = { version = "0.1.0", path = "crates/rook-core" }
+rook-llm = { version = "0.1.0", path = "crates/rook-llm" }
+rook-embeddings = { version = "0.1.0", path = "crates/rook-embeddings" }
+rook-vector-stores = { version = "0.1.0", path = "crates/rook-vector-stores" }
+rook-graph-stores = { version = "0.1.0", path = "crates/rook-graph-stores" }
+rook-rerankers = { version = "0.1.0", path = "crates/rook-rerankers" }
+rook-client = { version = "0.1.0", path = "crates/rook-client" }
+rook-server = { version = "0.1.0", path = "crates/rook-server" }
+rook-extractors = { version = "0.1.0", path = "crates/rook-extractors" }
