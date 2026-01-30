@@ -4,10 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Modality of original content.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Modality {
     /// Plain text content.
+    #[default]
     Text,
     /// PDF document.
     Pdf,
@@ -19,12 +20,6 @@ pub enum Modality {
         format: String,
     },
     // Future: Audio, Video (v2)
-}
-
-impl Default for Modality {
-    fn default() -> Self {
-        Modality::Text
-    }
 }
 
 /// Source reference for original content.
