@@ -7,7 +7,10 @@ use uuid::Uuid;
 
 use crate::config::MemoryConfig;
 use crate::error::{RookError, RookResult};
-use crate::events::EventBus;
+use crate::events::{
+    EventBus, MemoryCreatedEvent, MemoryDeletedEvent, MemoryLifecycleEvent, MemoryUpdatedEvent,
+    UpdateType,
+};
 use crate::ingestion::{
     IngestDecision, IngestResult, PredictionErrorGate, StrengthSignal, StrengthSignalProcessor,
 };
@@ -289,6 +292,24 @@ impl Memory {
             )?;
         }
 
+        // Emit updated event
+        if let Some(ref event_bus) = self.event_bus {
+            let old_content = prev_data.clone().unwrap_or_default();
+            let event = MemoryUpdatedEvent::new(
+                memory_id,
+                &old_content,
+                data,
+                UpdateType::Content,
+                1, // Version tracking not yet integrated
+            );
+            let event = if let Some(user_id) = payload.get("user_id").and_then(|v| v.as_str()) {
+                event.with_user(user_id)
+            } else {
+                event
+            };
+            event_bus.emit(MemoryLifecycleEvent::Updated(event));
+        }
+
         Ok(MemoryItem {
             id: memory_id.to_string(),
             memory: data.to_string(),
@@ -342,6 +363,21 @@ impl Memory {
                     .and_then(|r| r.payload.get("role"))
                     .and_then(|v| v.as_str()),
             )?;
+        }
+
+        // Emit deleted event
+        if let Some(ref event_bus) = self.event_bus {
+            let event = MemoryDeletedEvent::new(memory_id, false); // hard delete
+            let event = if let Some(user_id) = existing
+                .as_ref()
+                .and_then(|r| r.payload.get("user_id"))
+                .and_then(|v| v.as_str())
+            {
+                event.with_user(user_id)
+            } else {
+                event
+            };
+            event_bus.emit(MemoryLifecycleEvent::Deleted(event));
         }
 
         Ok(())
@@ -909,6 +945,17 @@ impl Memory {
 
         let record = VectorRecord::new(memory_id.clone(), embedding, payload.clone());
         self.vector_store.insert(vec![record]).await?;
+
+        // Emit created event
+        if let Some(ref event_bus) = self.event_bus {
+            let event = MemoryCreatedEvent::new(&memory_id, data).with_metadata(payload.clone());
+            let event = if let Some(user_id) = metadata.get("user_id").and_then(|v| v.as_str()) {
+                event.with_user(user_id)
+            } else {
+                event
+            };
+            event_bus.emit(MemoryLifecycleEvent::Created(event));
+        }
 
         // Record history
         {
