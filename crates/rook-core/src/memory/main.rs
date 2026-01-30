@@ -8,15 +8,15 @@ use uuid::Uuid;
 use crate::config::MemoryConfig;
 use crate::error::{RookError, RookResult};
 use crate::events::{
-    EventBus, MemoryCreatedEvent, MemoryDeletedEvent, MemoryLifecycleEvent, MemoryUpdatedEvent,
-    UpdateType,
+    AccessType, EventBus, MemoryAccessedEvent, MemoryCreatedEvent, MemoryDeletedEvent,
+    MemoryLifecycleEvent, MemoryUpdatedEvent, UpdateType,
 };
 use crate::ingestion::{
     IngestDecision, IngestResult, PredictionErrorGate, StrengthSignal, StrengthSignalProcessor,
 };
 use crate::traits::{
-    Embedder, EmbeddingAction, GraphStore, Llm, Reranker, VectorRecord, VectorSearchResult,
-    VectorStore,
+    Embedder, EmbeddingAction, GenerationOptions, GraphFilters, GraphStore, Llm, Reranker,
+    ResponseFormat, VectorRecord, VectorSearchResult, VectorStore,
 };
 use crate::types::{
     AddResult, Filter, Grade, GraphRelation, MemoryEvent, MemoryItem, MemoryResult, MemoryType,
@@ -27,8 +27,8 @@ use super::history::{HistoryEvent, HistoryStore};
 use super::json_parser::{parse_facts, parse_memory_actions};
 use super::prompts::{
     agent_memory_extraction_prompt, build_update_memory_message, classification_prompt,
-    parse_classification, procedural_memory_prompt, user_memory_extraction_prompt,
-    ClassificationResult,
+    entity_extraction_prompt, find_entity_match, parse_classification, parse_entity_extraction,
+    procedural_memory_prompt, user_memory_extraction_prompt, ClassificationResult, MergeConfig,
 };
 use super::session::SessionScope;
 use super::telemetry::{process_telemetry_filters, Telemetry};
@@ -192,7 +192,7 @@ impl Memory {
         // Inject key memories at top if enabled
         if self.config.key_memory.include_in_search {
             let key_memories = self
-                .get_key_memories(user_id, agent_id, run_id)
+                .get_key_memories(user_id.clone(), agent_id.clone(), run_id.clone())
                 .await?;
 
             if !key_memories.is_empty() {
@@ -208,6 +208,20 @@ impl Memory {
             None
         };
 
+        // Emit accessed events for each memory in results
+        if let Some(ref event_bus) = self.event_bus {
+            for memory in &memories {
+                let event = MemoryAccessedEvent::new(&memory.id, AccessType::Search)
+                    .with_search_context(query, memory.score.unwrap_or(0.0));
+                let event = if let Some(ref user_id) = user_id {
+                    event.with_user(user_id)
+                } else {
+                    event
+                };
+                event_bus.emit(MemoryLifecycleEvent::Accessed(event));
+            }
+        }
+
         Ok(SearchResult {
             results: memories,
             relations,
@@ -217,7 +231,26 @@ impl Memory {
     /// Get a specific memory by ID.
     pub async fn get(&self, memory_id: &str) -> RookResult<Option<MemoryItem>> {
         let record = self.vector_store.get(memory_id).await?;
-        Ok(record.map(|r| self.record_to_memory_item(r, None)))
+        let result = record.map(|r| self.record_to_memory_item(r, None));
+
+        // Emit accessed event if memory was found
+        if let (Some(ref event_bus), Some(ref memory)) = (&self.event_bus, &result) {
+            let event = MemoryAccessedEvent::new(&memory.id, AccessType::DirectGet);
+            // Extract user_id from memory metadata if available
+            let event = if let Some(user_id) = memory
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("user_id"))
+                .and_then(|v| v.as_str())
+            {
+                event.with_user(user_id)
+            } else {
+                event
+            };
+            event_bus.emit(MemoryLifecycleEvent::Accessed(event));
+        }
+
+        Ok(result)
     }
 
     /// Get all memories for a scope.
@@ -1019,13 +1052,202 @@ impl Memory {
         Ok(memories)
     }
 
+    /// Add entities and relationships to the graph store.
+    ///
+    /// This method:
+    /// 1. Extracts entities and relationships from message content using LLM
+    /// 2. Checks for existing similar entities using embedding-based merging (threshold 0.85)
+    /// 3. Stores new entities with their embeddings
+    /// 4. Creates relationships between entities
+    /// 5. Returns GraphRelation objects for the created relationships
     async fn add_to_graph(
         &self,
-        _messages: &[Message],
-        _filters: &HashMap<String, serde_json::Value>,
+        messages: &[Message],
+        filters: &HashMap<String, serde_json::Value>,
     ) -> RookResult<Vec<GraphRelation>> {
-        // TODO: Implement graph store integration
-        Ok(vec![])
+        // Get graph store - return empty if not configured
+        let graph_store = match &self.graph_store {
+            Some(store) => store,
+            None => return Ok(vec![]),
+        };
+
+        // Concatenate all message content for extraction
+        let text: String = messages
+            .iter()
+            .map(|m| m.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if text.trim().is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Build graph filters from the filters HashMap
+        let graph_filters = GraphFilters {
+            user_id: filters.get("user_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            agent_id: filters.get("agent_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            run_id: filters.get("run_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        };
+
+        // Extract entities and relationships using LLM
+        let extraction_result = match self.extract_entities(&text).await {
+            Ok(result) => result,
+            Err(e) => {
+                tracing::warn!("Entity extraction failed: {}", e);
+                return Ok(vec![]);
+            }
+        };
+
+        if extraction_result.is_empty() {
+            tracing::debug!("No entities extracted from text");
+            return Ok(vec![]);
+        }
+
+        tracing::debug!(
+            "Extracted {} entities and {} relationships",
+            extraction_result.entities.len(),
+            extraction_result.relationships.len()
+        );
+
+        // Get existing entities for merge checking
+        let existing_entities = graph_store.get_entities_for_merge(&graph_filters).await?;
+
+        // Merge config with 0.85 threshold
+        let merge_config = MergeConfig::default();
+
+        // Track entity name -> ID mappings for relationship creation
+        let mut entity_ids: HashMap<String, i64> = HashMap::new();
+
+        // Process each extracted entity
+        for entity in &extraction_result.entities {
+            // Generate embedding for the entity name
+            let embedding = match self
+                .embedder
+                .embed(&entity.name, Some(EmbeddingAction::Add))
+                .await
+            {
+                Ok(emb) => emb,
+                Err(e) => {
+                    tracing::warn!("Failed to embed entity '{}': {}", entity.name, e);
+                    continue;
+                }
+            };
+
+            // Check for merge with existing entities
+            let merge_result = find_entity_match(entity, &embedding, &existing_entities, &merge_config);
+
+            let entity_id = if merge_result.matched {
+                // Use existing entity ID
+                let existing_id = merge_result.matched_entity_id.unwrap();
+                tracing::debug!(
+                    "Merged entity '{}' with existing '{}' (similarity: {:.3})",
+                    entity.name,
+                    merge_result.matched_entity_name.as_deref().unwrap_or("unknown"),
+                    merge_result.similarity.unwrap_or(0.0)
+                );
+                existing_id
+            } else {
+                // Create new entity with embedding stored in properties
+                let properties = serde_json::json!({
+                    "description": entity.description,
+                    "embedding": embedding,
+                });
+
+                match graph_store
+                    .add_entity(
+                        &entity.name,
+                        entity.entity_type.as_str(),
+                        &properties,
+                        &graph_filters,
+                    )
+                    .await
+                {
+                    Ok(id) => {
+                        tracing::debug!(
+                            "Created entity '{}' (type: {}, id: {})",
+                            entity.name,
+                            entity.entity_type.as_str(),
+                            id
+                        );
+                        id
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to add entity '{}': {}", entity.name, e);
+                        continue;
+                    }
+                }
+            };
+
+            entity_ids.insert(entity.name.clone(), entity_id);
+        }
+
+        // Create relationships and build return value
+        let mut relations: Vec<GraphRelation> = Vec::new();
+
+        for rel in &extraction_result.relationships {
+            let properties = serde_json::json!({
+                "context": rel.context,
+            });
+
+            match graph_store
+                .add_relationship(
+                    &rel.source,
+                    &rel.target,
+                    rel.relationship_type.as_str(),
+                    &properties,
+                    &graph_filters,
+                )
+                .await
+            {
+                Ok(_) => {
+                    tracing::debug!(
+                        "Created relationship: {} --[{}]--> {}",
+                        rel.source,
+                        rel.relationship_type.as_str(),
+                        rel.target
+                    );
+                    relations.push(GraphRelation {
+                        source: rel.source.clone(),
+                        relationship: rel.relationship_type.as_str().to_string(),
+                        target: rel.target.clone(),
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to add relationship {} -> {}: {}",
+                        rel.source,
+                        rel.target,
+                        e
+                    );
+                }
+            }
+        }
+
+        Ok(relations)
+    }
+
+    /// Extract entities and relationships from text using LLM.
+    async fn extract_entities(
+        &self,
+        text: &str,
+    ) -> RookResult<super::prompts::ExtractionResult> {
+        let prompt = entity_extraction_prompt();
+        let messages = vec![
+            Message::system(prompt),
+            Message::user(format!("Extract entities and relationships from this text:\n\n{}", text)),
+        ];
+
+        // Request JSON response with deterministic temperature
+        let options = GenerationOptions {
+            temperature: Some(0.0),
+            response_format: Some(ResponseFormat::Json),
+            ..Default::default()
+        };
+
+        let response = self.llm.generate(&messages, Some(options)).await?;
+        let content = response.content.unwrap_or_default();
+
+        Ok(parse_entity_extraction(&content))
     }
 
     async fn create_procedural_memory(
