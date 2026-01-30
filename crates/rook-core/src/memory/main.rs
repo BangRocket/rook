@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::config::MemoryConfig;
 use crate::error::{RookError, RookResult};
+use crate::events::EventBus;
 use crate::ingestion::{
     IngestDecision, IngestResult, PredictionErrorGate, StrengthSignal, StrengthSignalProcessor,
 };
@@ -41,6 +42,7 @@ pub struct Memory {
     telemetry: Telemetry,
     prediction_error_gate: PredictionErrorGate,
     strength_processor: Mutex<StrengthSignalProcessor>,
+    event_bus: Option<EventBus>,
 }
 
 impl Memory {
@@ -75,7 +77,20 @@ impl Memory {
             telemetry,
             prediction_error_gate,
             strength_processor,
+            event_bus: None,
         })
+    }
+
+    /// Set the event bus for emitting memory lifecycle events.
+    ///
+    /// When an EventBus is configured, Memory will emit:
+    /// - MemoryCreatedEvent on add()
+    /// - MemoryUpdatedEvent on update()
+    /// - MemoryDeletedEvent on delete()
+    /// - MemoryAccessedEvent on search() and get()
+    pub fn with_event_bus(mut self, event_bus: EventBus) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     /// Add memories from messages.
