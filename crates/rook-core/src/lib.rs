@@ -23,10 +23,12 @@ pub mod config;
 pub mod consolidation;
 pub mod error;
 pub mod ingestion;
+pub mod intentions;
 pub mod memory;
 pub mod retrieval;
 pub mod traits;
 pub mod types;
+pub mod versioning;
 
 // Re-export commonly used types
 pub use cognitive::{ArchivalCandidate, CognitiveStore, FsrsScheduler};
@@ -53,4 +55,12 @@ pub use retrieval::{
 pub use types::{
     AddResult, ArchivalConfig, DualStrength, Filter, FsrsState, Grade, MemoryEvent, MemoryItem,
     MemoryResult, MemoryType, Message, MessageInput, MessageRole, SearchResult,
+};
+pub use versioning::{
+    FsrsStateSnapshot, MemoryVersion, SqliteVersionStore, VersionEventType, VersionStore,
+    VersionSummary,
+};
+pub use intentions::{
+    ActionResult, FiredIntention, Intention, IntentionAction, IntentionStore,
+    SqliteIntentionStore, TriggerCondition, TriggerReason,
 };
