@@ -135,6 +135,11 @@ pub enum RookError {
     /// Internal error.
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// Content extraction error.
+    #[cfg(feature = "multimodal")]
+    #[error("Extraction error: {0}")]
+    Extraction(String),
 }
 
 /// Error codes for programmatic handling.
@@ -354,6 +359,12 @@ impl RookError {
     /// Create an internal error.
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal(message.into())
+    }
+
+    /// Create an extraction error (multimodal feature).
+    #[cfg(feature = "multimodal")]
+    pub fn extraction(message: impl Into<String>) -> Self {
+        Self::Extraction(message.into())
     }
 
     /// Get the error code.
