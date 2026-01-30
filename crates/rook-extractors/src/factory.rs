@@ -58,6 +58,7 @@ impl ExtractorFactory {
     }
 
     /// Get all available extractors.
+    #[allow(clippy::vec_init_then_push)]
     pub fn all() -> Vec<Arc<dyn Extractor>> {
         let mut extractors: Vec<Arc<dyn Extractor>> = Vec::new();
 
