@@ -63,6 +63,13 @@ hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 
+# Multimodal extraction (feature-gated)
+rook-extractors = { path = "../rook-extractors", optional = true }
+
+[features]
+default = []
+multimodal = ["dep:rook-extractors"]
+
 [dev-dependencies]
 tokio-test = { workspace = true }
 mockall = { workspace = true }
