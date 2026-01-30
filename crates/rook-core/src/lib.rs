@@ -22,6 +22,7 @@ pub mod cognitive;
 pub mod config;
 pub mod consolidation;
 pub mod error;
+pub mod events;
 pub mod ingestion;
 pub mod intentions;
 pub mod memory;
@@ -64,4 +65,9 @@ pub use intentions::{
     ActionResult, BloomConfig, CheckerConfig, FiredIntention, FiredIntentionReceiver, Intention,
     IntentionAction, IntentionChecker, IntentionScheduler, IntentionStore, KeywordBloomFilter,
     SqliteIntentionStore, TriggerCondition, TriggerReason,
+};
+pub use events::{
+    AccessType, EventBus, EventSubscriber, MemoryAccessedEvent, MemoryCreatedEvent,
+    MemoryDeletedEvent, MemoryLifecycleEvent, MemoryUpdatedEvent, RetryPolicy, UpdateType,
+    WebhookConfig, WebhookDelivery, WebhookError, WebhookManager, verify_signature,
 };
