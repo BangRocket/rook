@@ -255,7 +255,7 @@ impl IntentionScheduler {
     }
 
     /// Load and schedule all time-based intentions from store.
-    pub async fn load_from_store<S: IntentionStore>(&self, store: &S) -> RookResult<usize> {
+    pub async fn load_from_store<S: IntentionStore + ?Sized>(&self, store: &S) -> RookResult<usize> {
         let mut count = 0;
 
         // Load time-elapsed intentions

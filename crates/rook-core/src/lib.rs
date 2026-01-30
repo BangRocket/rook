@@ -32,6 +32,7 @@ pub mod migration;
 #[cfg(feature = "multimodal")]
 pub mod multimodal;
 pub mod retrieval;
+pub mod runtime;
 pub mod traits;
 pub mod types;
 pub mod versioning;
@@ -76,6 +77,7 @@ pub use events::{
     MemoryDeletedEvent, MemoryLifecycleEvent, MemoryUpdatedEvent, RetryPolicy, UpdateType,
     WebhookConfig, WebhookDelivery, WebhookError, WebhookManager, verify_signature,
 };
+pub use runtime::{BackgroundRuntime, RuntimeConfig};
 
 // Multimodal extraction (feature-gated)
 #[cfg(feature = "multimodal")]
