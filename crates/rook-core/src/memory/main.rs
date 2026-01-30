@@ -1573,3 +1573,202 @@ mod event_wiring_tests {
         }
     }
 }
+
+/// Tests for add_to_graph entity extraction flow
+#[cfg(test)]
+mod add_to_graph_tests {
+    use super::*;
+    use crate::memory::{
+        parse_entity_extraction, EntityType, ExtractedEntity, ExtractedRelationship,
+        RelationshipType,
+    };
+    use crate::traits::EntityWithEmbedding;
+
+    #[test]
+    fn test_graph_filters_from_hashmap() {
+        // Verify GraphFilters can be built from HashMap (used in add_to_graph)
+        let mut filters = HashMap::new();
+        filters.insert("user_id".to_string(), serde_json::json!("user-123"));
+        filters.insert("agent_id".to_string(), serde_json::json!("agent-456"));
+        filters.insert("run_id".to_string(), serde_json::json!("run-789"));
+
+        let graph_filters = GraphFilters {
+            user_id: filters.get("user_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            agent_id: filters.get("agent_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            run_id: filters.get("run_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        };
+
+        assert_eq!(graph_filters.user_id, Some("user-123".to_string()));
+        assert_eq!(graph_filters.agent_id, Some("agent-456".to_string()));
+        assert_eq!(graph_filters.run_id, Some("run-789".to_string()));
+    }
+
+    #[test]
+    fn test_graph_relation_from_extracted_relationship() {
+        // Verify GraphRelation can be built from ExtractedRelationship
+        let rel = ExtractedRelationship::new("Alice", "Acme Corp", RelationshipType::WorksAt);
+
+        let graph_relation = GraphRelation {
+            source: rel.source.clone(),
+            relationship: rel.relationship_type.as_str().to_string(),
+            target: rel.target.clone(),
+        };
+
+        assert_eq!(graph_relation.source, "Alice");
+        assert_eq!(graph_relation.relationship, "works_at");
+        assert_eq!(graph_relation.target, "Acme Corp");
+    }
+
+    #[test]
+    fn test_entity_properties_for_storage() {
+        // Verify entity properties JSON structure for storage
+        let entity = ExtractedEntity::new("Alice", EntityType::Person)
+            .with_description("Software engineer");
+        let embedding = vec![1.0, 0.5, 0.0];
+
+        let properties = serde_json::json!({
+            "description": entity.description,
+            "embedding": embedding,
+        });
+
+        // Verify structure is valid JSON
+        assert!(properties.is_object());
+        assert_eq!(
+            properties["description"].as_str(),
+            Some("Software engineer")
+        );
+        assert_eq!(properties["embedding"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_extraction_result_entity_iteration() {
+        // Test that we can iterate over extracted entities and relationships
+        // as done in add_to_graph
+        let json = r#"{
+            "entities": [
+                {"name": "Alice", "entity_type": "person"},
+                {"name": "Bob", "entity_type": "person"},
+                {"name": "Acme Corp", "entity_type": "organization"}
+            ],
+            "relationships": [
+                {"source": "Alice", "target": "Acme Corp", "relationship_type": "works_at"},
+                {"source": "Alice", "target": "Bob", "relationship_type": "knows"}
+            ]
+        }"#;
+
+        let result = parse_entity_extraction(json);
+
+        // Verify entity iteration
+        let entity_names: Vec<&str> = result.entities.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(entity_names, vec!["Alice", "Bob", "Acme Corp"]);
+
+        // Verify relationship iteration
+        let rel_sources: Vec<&str> = result.relationships.iter().map(|r| r.source.as_str()).collect();
+        assert_eq!(rel_sources, vec!["Alice", "Alice"]);
+    }
+
+    #[test]
+    fn test_entity_id_tracking_hashmap() {
+        // Test the HashMap<String, i64> pattern used for tracking entity IDs
+        let mut entity_ids: HashMap<String, i64> = HashMap::new();
+
+        // Simulate adding entities
+        entity_ids.insert("Alice".to_string(), 1);
+        entity_ids.insert("Bob".to_string(), 2);
+        entity_ids.insert("Acme Corp".to_string(), 3);
+
+        // Verify lookups work
+        assert_eq!(entity_ids.get("Alice"), Some(&1));
+        assert_eq!(entity_ids.get("Bob"), Some(&2));
+        assert_eq!(entity_ids.get("Unknown"), None);
+    }
+
+    #[test]
+    fn test_merge_with_existing_entities() {
+        use crate::memory::prompts::{find_entity_match, MergeConfig};
+
+        // Simulate the merge logic in add_to_graph
+        let new_entity = ExtractedEntity::new("Alice Smith", EntityType::Person);
+        let new_embedding = vec![1.0, 0.0, 0.0];
+
+        let existing = vec![
+            EntityWithEmbedding {
+                id: 1,
+                name: "Alice".to_string(),
+                entity_type: "person".to_string(),
+                embedding: Some(vec![0.99, 0.01, 0.0]), // Very similar
+            },
+            EntityWithEmbedding {
+                id: 2,
+                name: "Bob".to_string(),
+                entity_type: "person".to_string(),
+                embedding: Some(vec![0.0, 1.0, 0.0]),
+            },
+        ];
+
+        let config = MergeConfig::default(); // threshold 0.85
+
+        let result = find_entity_match(&new_entity, &new_embedding, &existing, &config);
+
+        // Should merge with Alice (high similarity)
+        assert!(result.matched, "Should find a match above 0.85 threshold");
+        assert_eq!(result.matched_entity_id, Some(1));
+        assert_eq!(result.matched_entity_name.as_deref(), Some("Alice"));
+    }
+
+    #[test]
+    fn test_no_merge_below_threshold() {
+        use crate::memory::prompts::{find_entity_match, MergeConfig};
+
+        let new_entity = ExtractedEntity::new("Alice Smith", EntityType::Person);
+        let new_embedding = vec![1.0, 0.0, 0.0];
+
+        let existing = vec![EntityWithEmbedding {
+            id: 1,
+            name: "Bob".to_string(),
+            entity_type: "person".to_string(),
+            embedding: Some(vec![0.0, 1.0, 0.0]), // Orthogonal, 0.0 similarity
+        }];
+
+        let config = MergeConfig::default(); // threshold 0.85
+
+        let result = find_entity_match(&new_entity, &new_embedding, &existing, &config);
+
+        // Should NOT merge (0.0 similarity < 0.85 threshold)
+        assert!(!result.matched);
+    }
+
+    #[test]
+    fn test_message_content_concatenation() {
+        // Test the message content concatenation used in add_to_graph
+        let messages = vec![
+            Message::user("Alice works at Acme Corp."),
+            Message::assistant("I see! Alice is an employee at Acme Corp."),
+            Message::user("She knows Bob who also works there."),
+        ];
+
+        let text: String = messages
+            .iter()
+            .map(|m| m.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(text.contains("Alice works at Acme Corp."));
+        assert!(text.contains("She knows Bob"));
+        assert!(text.contains("\n")); // Joined with newlines
+    }
+
+    #[test]
+    fn test_empty_messages_handling() {
+        // Test handling of empty messages
+        let messages: Vec<Message> = vec![];
+
+        let text: String = messages
+            .iter()
+            .map(|m| m.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(text.trim().is_empty());
+    }
+}

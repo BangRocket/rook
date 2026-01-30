@@ -960,4 +960,336 @@ mod tests {
         assert!(!result.is_key);
         assert!((result.confidence - 0.5).abs() < 0.001);
     }
+
+    // ========================================================================
+    // Entity Extraction Tests
+    // ========================================================================
+
+    #[test]
+    fn test_entity_type_from_str_flexible() {
+        assert_eq!(EntityType::from_str_flexible("person"), Some(EntityType::Person));
+        assert_eq!(EntityType::from_str_flexible("PERSON"), Some(EntityType::Person));
+        assert_eq!(EntityType::from_str_flexible("People"), Some(EntityType::Person));
+        assert_eq!(EntityType::from_str_flexible("organization"), Some(EntityType::Organization));
+        assert_eq!(EntityType::from_str_flexible("company"), Some(EntityType::Organization));
+        assert_eq!(EntityType::from_str_flexible("location"), Some(EntityType::Location));
+        assert_eq!(EntityType::from_str_flexible("city"), Some(EntityType::Location));
+        assert_eq!(EntityType::from_str_flexible("unknown_type"), None);
+    }
+
+    #[test]
+    fn test_relationship_type_from_str_flexible() {
+        assert_eq!(RelationshipType::from_str_flexible("works_at"), Some(RelationshipType::WorksAt));
+        assert_eq!(RelationshipType::from_str_flexible("works-at"), Some(RelationshipType::WorksAt));
+        assert_eq!(RelationshipType::from_str_flexible("employed_by"), Some(RelationshipType::WorksAt));
+        assert_eq!(RelationshipType::from_str_flexible("knows"), Some(RelationshipType::Knows));
+        assert_eq!(RelationshipType::from_str_flexible("related_to"), Some(RelationshipType::RelatedTo));
+        assert_eq!(RelationshipType::from_str_flexible("unknown_relation"), None);
+    }
+
+    #[test]
+    fn test_parse_entity_extraction_valid_json() {
+        let response = r#"{
+            "entities": [
+                {"name": "Alice", "entity_type": "person", "description": "A software engineer"},
+                {"name": "Acme Corp", "entity_type": "organization"}
+            ],
+            "relationships": [
+                {"source": "Alice", "target": "Acme Corp", "relationship_type": "works_at"}
+            ]
+        }"#;
+
+        let result = parse_entity_extraction(response);
+
+        assert_eq!(result.entities.len(), 2);
+        assert_eq!(result.entities[0].name, "Alice");
+        assert_eq!(result.entities[0].entity_type, EntityType::Person);
+        assert_eq!(result.entities[0].description, Some("A software engineer".to_string()));
+        assert_eq!(result.entities[1].name, "Acme Corp");
+        assert_eq!(result.entities[1].entity_type, EntityType::Organization);
+
+        assert_eq!(result.relationships.len(), 1);
+        assert_eq!(result.relationships[0].source, "Alice");
+        assert_eq!(result.relationships[0].target, "Acme Corp");
+        assert_eq!(result.relationships[0].relationship_type, RelationshipType::WorksAt);
+    }
+
+    #[test]
+    fn test_parse_entity_extraction_with_code_block() {
+        let response = r#"```json
+{
+    "entities": [{"name": "Bob", "entity_type": "person"}],
+    "relationships": []
+}
+```"#;
+
+        let result = parse_entity_extraction(response);
+        assert_eq!(result.entities.len(), 1);
+        assert_eq!(result.entities[0].name, "Bob");
+    }
+
+    #[test]
+    fn test_parse_entity_extraction_unknown_types_fallback() {
+        // Unknown entity type should fallback to Concept
+        // Unknown relationship type should fallback to RelatedTo
+        let response = r#"{
+            "entities": [{"name": "Thing", "entity_type": "unknown_type"}],
+            "relationships": [{"source": "A", "target": "B", "relationship_type": "unknown_rel"}]
+        }"#;
+
+        let result = parse_entity_extraction(response);
+        assert_eq!(result.entities[0].entity_type, EntityType::Concept);
+        assert_eq!(result.relationships[0].relationship_type, RelationshipType::RelatedTo);
+    }
+
+    #[test]
+    fn test_parse_entity_extraction_empty_response() {
+        let result = parse_entity_extraction("");
+        assert!(result.is_empty());
+
+        let result = parse_entity_extraction("   ");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_entity_extraction_malformed_json() {
+        // Completely invalid JSON should return empty result
+        let result = parse_entity_extraction("not json at all");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_entity_extraction_skips_invalid_entities() {
+        // Entities without names should be skipped
+        let response = r#"{
+            "entities": [
+                {"name": "Valid", "entity_type": "person"},
+                {"entity_type": "person"},
+                {"name": "", "entity_type": "person"},
+                {"name": "   ", "entity_type": "person"}
+            ],
+            "relationships": []
+        }"#;
+
+        let result = parse_entity_extraction(response);
+        assert_eq!(result.entities.len(), 1);
+        assert_eq!(result.entities[0].name, "Valid");
+    }
+
+    #[test]
+    fn test_extraction_result_is_empty() {
+        let empty = ExtractionResult::default();
+        assert!(empty.is_empty());
+
+        let non_empty = ExtractionResult {
+            entities: vec![ExtractedEntity::new("Alice", EntityType::Person)],
+            relationships: vec![],
+        };
+        assert!(!non_empty.is_empty());
+    }
+
+    // ========================================================================
+    // Entity Merging Tests
+    // ========================================================================
+
+    #[test]
+    fn test_cosine_similarity_identical() {
+        let a = vec![1.0, 0.0, 0.0];
+        let b = vec![1.0, 0.0, 0.0];
+        let sim = cosine_similarity(&a, &b);
+        assert!((sim - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_orthogonal() {
+        let a = vec![1.0, 0.0, 0.0];
+        let b = vec![0.0, 1.0, 0.0];
+        let sim = cosine_similarity(&a, &b);
+        assert!(sim.abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_opposite() {
+        let a = vec![1.0, 0.0, 0.0];
+        let b = vec![-1.0, 0.0, 0.0];
+        let sim = cosine_similarity(&a, &b);
+        assert!((sim + 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_empty() {
+        let a: Vec<f32> = vec![];
+        let b: Vec<f32> = vec![];
+        assert_eq!(cosine_similarity(&a, &b), 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_different_lengths() {
+        let a = vec![1.0, 0.0];
+        let b = vec![1.0, 0.0, 0.0];
+        assert_eq!(cosine_similarity(&a, &b), 0.0);
+    }
+
+    #[test]
+    fn test_merge_config_default() {
+        let config = MergeConfig::default();
+        assert_eq!(config.similarity_threshold, 0.85);
+        assert!(config.require_same_type);
+    }
+
+    #[test]
+    fn test_merge_result_no_match() {
+        let result = MergeResult::no_match();
+        assert!(!result.matched);
+        assert!(result.matched_entity_id.is_none());
+        assert!(result.matched_entity_name.is_none());
+        assert!(result.similarity.is_none());
+    }
+
+    #[test]
+    fn test_merge_result_matched() {
+        let result = MergeResult::matched(123, "Alice".to_string(), 0.95);
+        assert!(result.matched);
+        assert_eq!(result.matched_entity_id, Some(123));
+        assert_eq!(result.matched_entity_name.as_deref(), Some("Alice"));
+        assert_eq!(result.similarity, Some(0.95));
+    }
+
+    #[test]
+    fn test_find_entity_match_empty_existing() {
+        let entity = ExtractedEntity::new("Alice", EntityType::Person);
+        let embedding = vec![1.0, 0.0, 0.0];
+        let config = MergeConfig::default();
+
+        let result = find_entity_match(&entity, &embedding, &[], &config);
+        assert!(!result.matched);
+    }
+
+    #[test]
+    fn test_find_entity_match_empty_embedding() {
+        let entity = ExtractedEntity::new("Alice", EntityType::Person);
+        let existing = vec![crate::traits::EntityWithEmbedding {
+            id: 1,
+            name: "Alice".to_string(),
+            entity_type: "person".to_string(),
+            embedding: Some(vec![1.0, 0.0, 0.0]),
+        }];
+        let config = MergeConfig::default();
+
+        let result = find_entity_match(&entity, &[], &existing, &config);
+        assert!(!result.matched);
+    }
+
+    #[test]
+    fn test_find_entity_match_exact_match() {
+        let entity = ExtractedEntity::new("Alice", EntityType::Person);
+        let existing = vec![crate::traits::EntityWithEmbedding {
+            id: 1,
+            name: "Alice".to_string(),
+            entity_type: "person".to_string(),
+            embedding: Some(vec![1.0, 0.0, 0.0]),
+        }];
+        let embedding = vec![1.0, 0.0, 0.0];
+        let config = MergeConfig {
+            similarity_threshold: 0.80,
+            require_same_type: true,
+        };
+
+        let result = find_entity_match(&entity, &embedding, &existing, &config);
+        assert!(result.matched);
+        assert_eq!(result.matched_entity_id, Some(1));
+        assert_eq!(result.matched_entity_name.as_deref(), Some("Alice"));
+        assert!((result.similarity.unwrap() - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_find_entity_match_below_threshold() {
+        let entity = ExtractedEntity::new("Alice", EntityType::Person);
+        let existing = vec![crate::traits::EntityWithEmbedding {
+            id: 1,
+            name: "Alice".to_string(),
+            entity_type: "person".to_string(),
+            embedding: Some(vec![1.0, 1.0, 0.0]),
+        }];
+        // Similarity ~0.707, below 0.90 threshold
+        let embedding = vec![1.0, 0.0, 0.0];
+        let config = MergeConfig {
+            similarity_threshold: 0.90,
+            require_same_type: true,
+        };
+
+        let result = find_entity_match(&entity, &embedding, &existing, &config);
+        assert!(!result.matched);
+    }
+
+    #[test]
+    fn test_find_entity_match_type_mismatch() {
+        let entity = ExtractedEntity::new("Alice", EntityType::Person);
+        let existing = vec![crate::traits::EntityWithEmbedding {
+            id: 1,
+            name: "Alice Corp".to_string(),
+            entity_type: "organization".to_string(), // Different type
+            embedding: Some(vec![1.0, 0.0, 0.0]),
+        }];
+        let embedding = vec![1.0, 0.0, 0.0];
+        let config = MergeConfig::default(); // require_same_type = true
+
+        let result = find_entity_match(&entity, &embedding, &existing, &config);
+        assert!(!result.matched);
+    }
+
+    #[test]
+    fn test_find_entity_match_type_mismatch_allowed() {
+        let entity = ExtractedEntity::new("Alice", EntityType::Person);
+        let existing = vec![crate::traits::EntityWithEmbedding {
+            id: 1,
+            name: "Alice Corp".to_string(),
+            entity_type: "organization".to_string(), // Different type but allowed
+            embedding: Some(vec![1.0, 0.0, 0.0]),
+        }];
+        let embedding = vec![1.0, 0.0, 0.0];
+        let config = MergeConfig {
+            similarity_threshold: 0.85,
+            require_same_type: false, // Allow cross-type merging
+        };
+
+        let result = find_entity_match(&entity, &embedding, &existing, &config);
+        assert!(result.matched);
+    }
+
+    #[test]
+    fn test_find_entity_match_best_of_multiple() {
+        let entity = ExtractedEntity::new("Alice", EntityType::Person);
+        let existing = vec![
+            crate::traits::EntityWithEmbedding {
+                id: 1,
+                name: "Alice1".to_string(),
+                entity_type: "person".to_string(),
+                embedding: Some(vec![0.6, 0.8, 0.0]),
+            },
+            crate::traits::EntityWithEmbedding {
+                id: 2,
+                name: "Alice2".to_string(),
+                entity_type: "person".to_string(),
+                embedding: Some(vec![0.9, 0.1, 0.0]), // Most similar to [1,0,0]
+            },
+            crate::traits::EntityWithEmbedding {
+                id: 3,
+                name: "Alice3".to_string(),
+                entity_type: "person".to_string(),
+                embedding: Some(vec![0.5, 0.5, 0.5]),
+            },
+        ];
+        let embedding = vec![1.0, 0.0, 0.0];
+        let config = MergeConfig {
+            similarity_threshold: 0.50,
+            require_same_type: true,
+        };
+
+        let result = find_entity_match(&entity, &embedding, &existing, &config);
+        assert!(result.matched);
+        // Alice2 should be best match (highest similarity to [1,0,0])
+        assert_eq!(result.matched_entity_id, Some(2));
+        assert_eq!(result.matched_entity_name.as_deref(), Some("Alice2"));
+    }
 }
