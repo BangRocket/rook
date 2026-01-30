@@ -31,6 +31,21 @@ pub enum ExtractError {
     #[error("DOCX extraction error: {0}")]
     Docx(String),
 
+    /// Image processing error.
+    #[cfg(feature = "image")]
+    #[error("Image processing error: {0}")]
+    Image(String),
+
+    /// OCR extraction error.
+    #[cfg(feature = "ocr")]
+    #[error("OCR error: {0}")]
+    Ocr(String),
+
+    /// Vision LLM extraction error.
+    #[cfg(feature = "vision")]
+    #[error("Vision LLM error: {0}")]
+    Vision(String),
+
     /// Task join error from spawn_blocking.
     #[error("Task join error: {0}")]
     TaskJoin(#[from] tokio::task::JoinError),

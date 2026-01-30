@@ -24,10 +24,24 @@ pdf-extract = { version = "0.10", optional = true }
 # DOCX extraction (feature-gated)
 docx-rs = { version = "0.4", optional = true }
 
+# Image loading (for OCR and vision)
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"], optional = true }
+
+# OCR (feature-gated) - wraps Tesseract OCR
+rusty-tesseract = { version = "1.1", optional = true }
+
+# Vision LLM (feature-gated)
+async-openai = { version = "0.28", optional = true }
+base64 = { version = "0.22", optional = true }
+
 [features]
 default = ["pdf", "docx"]
 pdf = ["dep:pdf-extract"]
 docx = ["dep:docx-rs"]
+image = ["dep:image"]
+ocr = ["image", "dep:rusty-tesseract"]
+vision = ["image", "dep:async-openai", "dep:base64"]
+full = ["pdf", "docx", "ocr", "vision"]
 
 [dev-dependencies]
 tokio-test = { workspace = true }
