@@ -152,13 +152,16 @@ impl SqliteVersionStore {
         let changed_by: Option<String> = row.get(9)?;
 
         Ok(MemoryVersion {
-            version_id: Uuid::parse_str(&version_id)?,
+            version_id: Uuid::parse_str(&version_id)
+                .map_err(|e| crate::error::RookError::parse(e.to_string()))?,
             memory_id,
             version_number,
             content,
             metadata: Self::deserialize_metadata(&metadata)?,
             fsrs_state: Self::deserialize_fsrs(&fsrs_state)?,
-            created_at: DateTime::parse_from_rfc3339(&created_at)?.with_timezone(&Utc),
+            created_at: DateTime::parse_from_rfc3339(&created_at)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| crate::error::RookError::parse(e.to_string()))?,
             event_type: VersionEventType::from_str(&event_type)
                 .unwrap_or(VersionEventType::ContentUpdated),
             change_description,
