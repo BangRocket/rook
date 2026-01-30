@@ -175,7 +175,7 @@ impl MultimodalIngester {
             // Use infer=false since we're ingesting raw extracted content
             let result = memory
                 .add(
-                    &chunk.text,
+                    chunk.text.as_str(),
                     Some(user_id.to_string()),
                     None, // agent_id
                     None, // run_id

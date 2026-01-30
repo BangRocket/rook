@@ -26,6 +26,8 @@ pub mod events;
 pub mod ingestion;
 pub mod intentions;
 pub mod memory;
+#[cfg(feature = "multimodal")]
+pub mod multimodal;
 pub mod retrieval;
 pub mod traits;
 pub mod types;
@@ -71,3 +73,7 @@ pub use events::{
     MemoryDeletedEvent, MemoryLifecycleEvent, MemoryUpdatedEvent, RetryPolicy, UpdateType,
     WebhookConfig, WebhookDelivery, WebhookError, WebhookManager, verify_signature,
 };
+
+// Multimodal extraction (feature-gated)
+#[cfg(feature = "multimodal")]
+pub use multimodal::{MultimodalConfig, MultimodalIngester, MultimodalIngestResult, SourceProvenance};

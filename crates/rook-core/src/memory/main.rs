@@ -1098,4 +1098,97 @@ impl Memory {
             dual_strength: None,
         }
     }
+
+    /// Ingest multimodal content (PDF, DOCX, images) as memories.
+    ///
+    /// This is a convenience method that extracts text from the content,
+    /// chunks if necessary, and stores as memories with provenance metadata.
+    ///
+    /// # Cross-Modal Retrieval
+    ///
+    /// When using multimodal ingestion, memories from different modalities
+    /// (PDF, DOCX, images) are all stored as text with metadata tracking
+    /// their source. This means:
+    ///
+    /// - Queries find relevant content regardless of original format
+    /// - Results include `source_modality` in metadata for format awareness
+    /// - No special handling needed - just search normally
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let pdf_bytes = std::fs::read("document.pdf")?;
+    /// let result = memory.ingest_content(
+    ///     &pdf_bytes,
+    ///     "application/pdf",
+    ///     Some("document.pdf"),
+    ///     "user_123",
+    ///     None,
+    /// ).await?;
+    ///
+    /// println!("Created {} memories from PDF", result.memory_ids.len());
+    ///
+    /// // Search finds content from any modality
+    /// let results = memory.search("meeting notes", Some("user_123".to_string()), None, None, 10, None, None, true).await?;
+    ///
+    /// // Check original modality in results
+    /// for mem in &results.results {
+    ///     if let Some(ref metadata) = mem.metadata {
+    ///         if let Some(modality) = metadata.get("source_modality") {
+    ///             println!("Found in {}: {}", modality, mem.memory);
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    #[cfg(feature = "multimodal")]
+    pub async fn ingest_content(
+        &self,
+        content: &[u8],
+        mime_type: &str,
+        filename: Option<&str>,
+        user_id: &str,
+        additional_metadata: Option<std::collections::HashMap<String, serde_json::Value>>,
+    ) -> crate::error::RookResult<crate::multimodal::MultimodalIngestResult> {
+        let ingester = crate::multimodal::MultimodalIngester::new();
+        ingester
+            .ingest(self, content, mime_type, filename, user_id, additional_metadata)
+            .await
+    }
+
+    /// Ingest multimodal content with custom configuration.
+    ///
+    /// Allows customizing chunk size, overlap, and page splitting behavior.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use rook_core::MultimodalConfig;
+    ///
+    /// // Use page-level splitting for PDFs
+    /// let config = MultimodalConfig::with_page_splitting();
+    ///
+    /// let result = memory.ingest_content_with_config(
+    ///     &pdf_bytes,
+    ///     "application/pdf",
+    ///     Some("large_document.pdf"),
+    ///     "user_123",
+    ///     None,
+    ///     config,
+    /// ).await?;
+    /// ```
+    #[cfg(feature = "multimodal")]
+    pub async fn ingest_content_with_config(
+        &self,
+        content: &[u8],
+        mime_type: &str,
+        filename: Option<&str>,
+        user_id: &str,
+        additional_metadata: Option<std::collections::HashMap<String, serde_json::Value>>,
+        config: crate::multimodal::MultimodalConfig,
+    ) -> crate::error::RookResult<crate::multimodal::MultimodalIngestResult> {
+        let ingester = crate::multimodal::MultimodalIngester::with_config(config);
+        ingester
+            .ingest(self, content, mime_type, filename, user_id, additional_metadata)
+            .await
+    }
 }
