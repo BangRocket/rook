@@ -2,9 +2,24 @@
 //!
 //! Provides extractors for PDF, DOCX, and image content with a unified
 //! trait-based interface following codebase patterns.
+//!
+//! # Example
+//!
+//! ```ignore
+//! use rook_extractors::{ExtractionPipeline, ExtractorFactory};
+//!
+//! // Use pipeline for automatic MIME type routing
+//! let pipeline = ExtractionPipeline::with_defaults();
+//! let result = pipeline.extract(&pdf_bytes, "application/pdf").await?;
+//!
+//! // Or create specific extractors
+//! let extractor = ExtractorFactory::pdf();
+//! let result = extractor.extract(&pdf_bytes).await?;
+//! ```
 
 mod error;
 mod factory;
+mod pipeline;
 mod types;
 
 #[cfg(feature = "pdf")]
@@ -15,6 +30,7 @@ mod docx;
 
 pub use error::{ExtractError, ExtractResult};
 pub use factory::ExtractorFactory;
+pub use pipeline::ExtractionPipeline;
 pub use types::{ContentSource, DocumentStructure, ExtractedContent, Modality};
 
 #[cfg(feature = "pdf")]
