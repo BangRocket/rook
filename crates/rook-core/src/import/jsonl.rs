@@ -109,11 +109,11 @@ pub struct ImportableMemory {
 pub async fn import_jsonl<R, F, Fut>(
     reader: R,
     batch_size: usize,
-    import_batch: F,
+    mut import_batch: F,
 ) -> RookResult<ImportStats>
 where
     R: AsyncBufRead + Unpin,
-    F: Fn(Vec<ImportableMemory>) -> Fut,
+    F: FnMut(Vec<ImportableMemory>) -> Fut,
     Fut: Future<Output = RookResult<usize>>,
 {
     let mut stats = ImportStats::new();

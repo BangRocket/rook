@@ -9,7 +9,7 @@
 
 use crate::{MemoryItem, RookResult};
 use futures::Stream;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::io::{AsyncWrite, AsyncWriteExt, BufWriter};
 
@@ -40,7 +40,7 @@ impl ExportStats {
 ///
 /// This is a serialization-focused subset of MemoryItem that includes
 /// all fields needed for complete backup/restore.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportableMemory {
     /// Unique identifier.
     pub id: String,
@@ -68,7 +68,7 @@ pub struct ExportableMemory {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
     /// Whether this is a key memory.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_key: bool,
 }
 
@@ -174,7 +174,6 @@ where
 mod tests {
     use super::*;
     use futures::stream;
-    use std::io::Cursor;
 
     #[tokio::test]
     async fn test_export_jsonl_basic() {
@@ -183,10 +182,6 @@ mod tests {
             MemoryItem::new("id2", "Second memory"),
         ];
 
-        let mut buffer = Vec::new();
-        let cursor = Cursor::new(&mut buffer);
-
-        // We need to use a Vec directly with proper wrapping
         let mut output = Vec::new();
         let stats = export_jsonl(stream::iter(memories), &mut output).await.unwrap();
 
