@@ -64,6 +64,72 @@ pub trait GraphStore: Send + Sync {
 
     /// Get all entities for the given filters.
     async fn get_all(&self, filters: &GraphFilters) -> RookResult<Vec<Entity>>;
+
+    /// Add an entity directly to the graph store.
+    ///
+    /// This method is used for LLM-extracted entities. The entity extraction
+    /// happens in the Memory layer, and the extracted entities are stored
+    /// via this method.
+    ///
+    /// Returns the entity ID (implementation-specific).
+    async fn add_entity(
+        &self,
+        name: &str,
+        entity_type: &str,
+        properties: &serde_json::Value,
+        filters: &GraphFilters,
+    ) -> RookResult<i64> {
+        // Default implementation: no-op, returns 0
+        // Implementations can override to provide actual storage
+        let _ = (name, entity_type, properties, filters);
+        Ok(0)
+    }
+
+    /// Add a relationship directly to the graph store.
+    ///
+    /// Creates a relationship between two entities by name.
+    /// If the entities don't exist, implementations may create them.
+    ///
+    /// Returns the relationship ID (implementation-specific).
+    async fn add_relationship(
+        &self,
+        source_name: &str,
+        target_name: &str,
+        relationship_type: &str,
+        properties: &serde_json::Value,
+        filters: &GraphFilters,
+    ) -> RookResult<i64> {
+        // Default implementation: no-op, returns 0
+        let _ = (source_name, target_name, relationship_type, properties, filters);
+        Ok(0)
+    }
+
+    /// Get entities with their embeddings for entity merging.
+    ///
+    /// This is used by the entity merger to find similar entities.
+    /// Returns entities that match the filters, with their embedding vectors
+    /// if available.
+    async fn get_entities_for_merge(
+        &self,
+        filters: &GraphFilters,
+    ) -> RookResult<Vec<EntityWithEmbedding>> {
+        // Default implementation: return empty vec (no merge support)
+        let _ = filters;
+        Ok(vec![])
+    }
+}
+
+/// Entity with embedding for merge operations.
+#[derive(Debug, Clone)]
+pub struct EntityWithEmbedding {
+    /// Database ID.
+    pub id: i64,
+    /// Entity name.
+    pub name: String,
+    /// Entity type.
+    pub entity_type: String,
+    /// Embedding vector (if available).
+    pub embedding: Option<Vec<f32>>,
 }
 
 /// Graph store configuration.

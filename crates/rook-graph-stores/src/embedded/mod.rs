@@ -626,6 +626,72 @@ impl GraphStore for EmbeddedGraphStore {
 
         Ok(entities)
     }
+
+    /// Add an entity directly (async wrapper for sync method).
+    async fn add_entity(
+        &self,
+        name: &str,
+        entity_type: &str,
+        properties: &serde_json::Value,
+        filters: &GraphFilters,
+    ) -> RookResult<i64> {
+        // Call the sync method
+        EmbeddedGraphStore::add_entity(self, name, entity_type, properties, filters)
+    }
+
+    /// Add a relationship directly (async wrapper for sync method).
+    async fn add_relationship(
+        &self,
+        source_name: &str,
+        target_name: &str,
+        relationship_type: &str,
+        properties: &serde_json::Value,
+        filters: &GraphFilters,
+    ) -> RookResult<i64> {
+        // Call the sync method
+        EmbeddedGraphStore::add_relationship(self, source_name, target_name, relationship_type, properties, filters)
+    }
+
+    /// Get entities for merge operations.
+    async fn get_entities_for_merge(
+        &self,
+        filters: &GraphFilters,
+    ) -> RookResult<Vec<rook_core::traits::EntityWithEmbedding>> {
+        let graph = self.graph.lock().map_err(|e| RookError::internal(e.to_string()))?;
+        let mut entities = Vec::new();
+
+        for node_idx in graph.node_indices() {
+            let node = match graph.node_weight(node_idx) {
+                Some(n) => n,
+                None => continue,
+            };
+
+            if node.matches_filters(
+                filters.user_id.as_deref(),
+                filters.agent_id.as_deref(),
+                filters.run_id.as_deref(),
+            ) {
+                // Try to get embedding from properties if stored
+                let embedding = node.properties
+                    .get("embedding")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_f64().map(|f| f as f32))
+                            .collect()
+                    });
+
+                entities.push(rook_core::traits::EntityWithEmbedding {
+                    id: node.db_id,
+                    name: node.name.clone(),
+                    entity_type: node.entity_type.clone(),
+                    embedding,
+                });
+            }
+        }
+
+        Ok(entities)
+    }
 }
 
 // Implement Debug for EmbeddedGraphStore
