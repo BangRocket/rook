@@ -66,9 +66,19 @@ hex = { workspace = true }
 # Multimodal extraction (feature-gated)
 rook-extractors = { path = "../rook-extractors", optional = true }
 
+# Export formats (feature-gated)
+arrow = { version = "53", optional = true }
+parquet = { version = "53", features = ["async"], optional = true }
+
+# Streaming utilities
+futures-util = "0.3"
+tokio-util = { version = "0.7", features = ["io"] }
+pin-project-lite = "0.2"
+
 [features]
 default = []
 multimodal = ["dep:rook-extractors"]
+export = ["dep:arrow", "dep:parquet"]
 
 [dev-dependencies]
 tokio-test = { workspace = true }

@@ -23,6 +23,8 @@ pub mod config;
 pub mod consolidation;
 pub mod error;
 pub mod events;
+pub mod export;
+pub mod import;
 pub mod ingestion;
 pub mod intentions;
 pub mod memory;
@@ -77,3 +79,9 @@ pub use events::{
 // Multimodal extraction (feature-gated)
 #[cfg(feature = "multimodal")]
 pub use multimodal::{MultimodalConfig, MultimodalIngester, MultimodalIngestResult, SourceProvenance};
+
+// Export/Import utilities
+pub use export::{export_jsonl, ExportStats, ExportableMemory};
+#[cfg(feature = "export")]
+pub use export::export_parquet;
+pub use import::{import_jsonl, ImportStats, ImportableMemory};
