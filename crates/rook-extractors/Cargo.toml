@@ -1,0 +1,33 @@
+[package]
+name = "rook-extractors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Content extraction for multimodal memory ingestion"
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# PDF extraction (feature-gated)
+pdf-extract = { version = "0.10", optional = true }
+
+# DOCX extraction (feature-gated)
+docx-rs = { version = "0.4", optional = true }
+
+[features]
+default = ["pdf", "docx"]
+pdf = ["dep:pdf-extract"]
+docx = ["dep:docx-rs"]
+
+[dev-dependencies]
+tokio-test = { workspace = true }

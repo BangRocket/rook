@@ -9,6 +9,7 @@ members = [
     "crates/rook-rerankers",
     "crates/rook-client",
     "crates/rook-server",
+    "crates/rook-extractors",
 ]
 
 [workspace.package]
@@ -106,3 +107,4 @@ rook-graph-stores = { path = "crates/rook-graph-stores" }
 rook-rerankers = { path = "crates/rook-rerankers" }
 rook-client = { path = "crates/rook-client" }
 rook-server = { path = "crates/rook-server" }
+rook-extractors = { path = "crates/rook-extractors" }
