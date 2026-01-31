@@ -4,6 +4,7 @@ mod config;
 mod health;
 mod memories;
 mod search;
+mod signals;
 
 use axum::{
     routing::{delete, get, post, put},
@@ -27,6 +28,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/memories/:id/history", get(memories::get_memory_history))
         // Search
         .route("/search", post(search::search_memories))
+        // Strength signals
+        .route("/signals", post(signals::process_signals))
+        .route("/signals/apply", post(signals::apply_updates))
         // Configuration
         .route("/configure", post(config::configure))
         .route("/reset", post(config::reset))
@@ -38,3 +42,4 @@ pub use config::*;
 pub use health::*;
 pub use memories::*;
 pub use search::*;
+pub use signals::*;

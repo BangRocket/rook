@@ -467,4 +467,95 @@ impl MemoryClient {
 
         Ok(())
     }
+
+    /// Send strength signals for memory feedback.
+    ///
+    /// Signals indicate how memories were used (or not) and trigger FSRS updates:
+    /// - `used_in_response`: Memory was used → Good grade
+    /// - `user_confirmation`: User confirmed accuracy → Easy grade
+    /// - `user_correction`: User corrected info → Again grade (demote)
+    /// - `retrieved_not_used`: Retrieved but not used → Neutral
+    /// - `marked_incorrect`: User marked as wrong → Again grade
+    /// - `marked_important`: User marked as key → Key memory flag
+    pub async fn send_signals(&self, signals: Vec<SignalInput>) -> RookResult<SignalsResponse> {
+        let body = json!({ "signals": signals });
+
+        let response = self
+            .client
+            .post(format!("{}/signals/", self.base_url))
+            .headers(self.headers())
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| RookError::api(format!("Failed to send signals: {}", e)))?;
+
+        if !response.status().is_success() {
+            let error = response.text().await.unwrap_or_default();
+            return Err(RookError::api(format!(
+                "Failed to send signals: {}",
+                error
+            )));
+        }
+
+        let result: SignalsResponse = response
+            .json()
+            .await
+            .map_err(|e| RookError::api(format!("Failed to parse response: {}", e)))?;
+
+        Ok(result)
+    }
+
+    /// Send a single strength signal.
+    pub async fn send_signal(&self, signal: SignalInput) -> RookResult<SignalsResponse> {
+        self.send_signals(vec![signal]).await
+    }
+}
+
+/// Input for a strength signal.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SignalInput {
+    /// Memory was used in generating a response.
+    UsedInResponse {
+        memory_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        context: Option<String>,
+    },
+    /// User explicitly corrected information.
+    UserCorrection {
+        old_memory_id: String,
+        new_content: String,
+    },
+    /// User confirmed information is correct.
+    UserConfirmation { memory_id: String },
+    /// Contradiction resolved between two memories.
+    Contradiction { winner_id: String, loser_id: String },
+    /// Memory was retrieved but not used.
+    RetrievedNotUsed { memory_id: String },
+    /// User explicitly marked memory as incorrect.
+    MarkedIncorrect {
+        memory_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+    /// User explicitly marked memory as important.
+    MarkedImportant { memory_id: String },
+}
+
+/// Response from sending signals.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignalsResponse {
+    /// Number of signals processed.
+    pub processed: usize,
+    /// Pending grade updates.
+    pub pending_updates: Vec<PendingUpdate>,
+    /// Message.
+    pub message: String,
+}
+
+/// A pending grade update.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingUpdate {
+    pub memory_id: String,
+    pub grade: String,
 }

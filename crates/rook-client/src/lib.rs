@@ -5,7 +5,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use rook_client::MemoryClient;
+//! use rook_client::{MemoryClient, SignalInput};
 //!
 //! let client = MemoryClient::new("your-api-key")?;
 //!
@@ -14,9 +14,15 @@
 //!
 //! // Search memories
 //! let memories = client.search("programming", "user-123", 10).await?;
+//!
+//! // Send a signal that a memory was used
+//! client.send_signal(SignalInput::UsedInResponse {
+//!     memory_id: "mem-123".to_string(),
+//!     context: Some("answered user question".to_string()),
+//! }).await?;
 //! ```
 
 mod client;
 
-pub use client::MemoryClient;
+pub use client::{MemoryClient, PendingUpdate, SignalInput, SignalsResponse};
 pub use rook_core::types::MemoryItem;
